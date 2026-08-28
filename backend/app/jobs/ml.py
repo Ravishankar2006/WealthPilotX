@@ -11,13 +11,15 @@ built is how an unreviewed model reaches users.
 
 from datetime import UTC, datetime
 
+import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.logging import get_logger, safe_extra
-from app.ml import registry
+from app.ml import backtest, registry
+from app.ml.features.market import load_prices
 from app.ml.prediction import dataset as prediction_dataset
 from app.ml.prediction import model as prediction_model
 from app.ml.risk import model as risk_model
@@ -66,9 +68,14 @@ def train_risk(db: Session) -> ModelRecord:
     return record
 
 
-def train_prediction(db: Session) -> ModelRecord:
-    """Train the FR-08 regressor on stored market history."""
-    data = prediction_dataset.build_training_data(db)
+def train_prediction(db: Session, *, holdout_days: int = 0) -> ModelRecord:
+    """Train the FR-08 regressor on stored market history.
+
+    `holdout_days` reserves the most recent period so §19's backtest has genuinely
+    out-of-sample data. Zero trains on everything, which maximises the model but
+    leaves nothing to evaluate a portfolio against.
+    """
+    data = prediction_dataset.build_training_data(db, holdout_days=holdout_days)
     artifact, metrics = prediction_model.train(data)
 
     record = registry.register(
@@ -80,6 +87,8 @@ def train_prediction(db: Session) -> ModelRecord:
         training_end=data.train_end.date(),
     )
     _summarise(record)
+    if holdout_days:
+        print(f"  reserved the last {holdout_days} days for out-of-sample backtesting (§19)")  # noqa: T201
     return record
 
 
@@ -172,3 +181,159 @@ def list_models(db: Session, name: str | None = None) -> list[ModelRecord]:
     if not records:
         print("no models registered")  # noqa: T201
     return records
+
+
+def backtest_portfolio(
+    db: Session,
+    *,
+    user_email: str | None = None,
+    months: int = 12,
+    cost_bps: float = backtest.DEFAULT_TRANSACTION_COST_BPS,
+) -> backtest.BacktestResult | None:
+    """§19 — backtest the most recent portfolio against a benchmark.
+
+    Uses a stored portfolio rather than generating a fresh one, so the thing measured
+    is what a user was actually shown.
+    """
+    from datetime import timedelta
+
+    from app.models.portfolio import Portfolio, PortfolioAsset
+    from app.models.user import User
+
+    statement = select(Portfolio).order_by(Portfolio.created_at.desc()).limit(1)
+    if user_email:
+        statement = statement.join(User, User.id == Portfolio.user_id).where(
+            User.email == user_email
+        )
+
+    portfolio = db.scalar(statement)
+    if portfolio is None:
+        print("backtest: no portfolio found — generate one first")  # noqa: T201
+        return None
+
+    weights = {
+        symbol: float(weight)
+        for weight, symbol in db.execute(
+            select(PortfolioAsset.weight, Asset.symbol)
+            .join(Asset, Asset.id == PortfolioAsset.asset_id)
+            .where(PortfolioAsset.portfolio_id == portfolio.id)
+        ).all()
+    }
+
+    frames = {}
+    for symbol in [*weights, backtest.DEFAULT_BENCHMARK]:
+        prices = load_prices(db, symbol)
+        if not prices.empty:
+            frames[symbol] = prices["adj_close"]
+    if backtest.DEFAULT_BENCHMARK not in frames:
+        print(f"backtest: benchmark {backtest.DEFAULT_BENCHMARK} has no price history")  # noqa: T201
+        return None
+
+    prices = pd.DataFrame(frames).sort_index()
+    end = prices.index[-1].date()
+
+    # The training window of the production predictor, so §19's overlap check has
+    # something real to test against.
+    record = registry.production_record(db, PREDICTION_MODEL)
+    training_end = record.training_end if record else None
+
+    start = end - timedelta(days=int(months * 30.44))
+    if training_end is not None and start <= training_end:
+        # §19 wants the backtest to *follow* the training period, so that is where
+        # it starts — rather than refusing a window the operator had no way to know
+        # was wrong. The window actually used is printed with the results.
+        start = training_end + timedelta(days=1)
+
+    if (end - start).days < 60:
+        print(  # noqa: T201
+            f"backtest: only {(end - start).days} days remain after the model's training "
+            f"window (through {training_end}). Retrain with a reserved period — "
+            "`python -m app.jobs train-prediction --holdout-days 180` — so there is "
+            "genuine out-of-sample data to measure against (§19)."
+        )
+        return None
+
+    try:
+        result = backtest.run(
+            prices,
+            weights,
+            benchmark=prices[backtest.DEFAULT_BENCHMARK],
+            start=start,
+            end=end,
+            training_end=training_end,
+            transaction_cost_bps=cost_bps,
+        )
+    except backtest.BacktestError as exc:
+        print(f"backtest: {exc}")  # noqa: T201
+        return None
+
+    _print_backtest(result)
+    return result
+
+
+def _print_backtest(result: backtest.BacktestResult) -> None:
+    print(f"\nBacktest {result.start} → {result.end}  ({result.rebalances} rebalances)")  # noqa: T201
+    print(f"{'metric':<22}{'portfolio':>14}{'benchmark (' + result.benchmark_symbol + ')':>22}")  # noqa: T201
+    for label, key in [
+        ("total return", "total_return"),
+        ("annualised return", "annualised_return"),
+        ("volatility", "volatility"),
+        ("Sharpe ratio", "sharpe_ratio"),
+        ("max drawdown", "max_drawdown"),
+    ]:
+        mine = result.portfolio.as_dict()[key]
+        theirs = result.benchmark.as_dict()[key]
+        fmt = "{:>13.2%}" if key != "sharpe_ratio" else "{:>13.3f}"
+        print(f"{label:<22}{fmt.format(mine)} {fmt.format(theirs)}")  # noqa: T201
+
+    # §19 requires the assumption to be reported, not merely applied.
+    print(  # noqa: T201
+        f"\nTransaction costs: {result.transaction_cost_bps:.0f} bps per side on turnover, "
+        f"rebalanced every {backtest.REBALANCE_DAYS} trading days. "
+        f"Total cost drag: {result.total_costs:.2%}."
+    )
+    print(  # noqa: T201
+        "Past performance does not guarantee future results. This is a historical "
+        "simulation, not a record of realised returns."
+    )
+
+
+def evaluate_recommendations(db: Session, k: int = 10) -> dict[str, object] | None:
+    """§18's recommendation metrics across every risk-class and goal combination.
+
+    Reported per combination rather than as one headline number: an average over
+    combinations would hide a ranker that works for GROWTH and fails for RETIREMENT.
+    """
+    from app.ml.recommendation import evaluation as rank_eval
+    from app.ml.recommendation import scoring as scoring_module
+    from app.models.enums import InvestmentGoal, RiskCategory
+    from app.services import portfolio_service
+
+    features = portfolio_service._asset_features(db)
+    if len(features) < 2:
+        print("evaluate-recommendations: not enough assets with price history")  # noqa: T201
+        return None
+
+    print(f"\nRecommendation ranking metrics (§18), K={k}, {len(features)} assets")  # noqa: T201
+    print(f"{'risk':<8}{'goal':<18}{'P@K':>8}{'R@K':>8}{'NDCG':>8}{'relevant':>10}")  # noqa: T201
+
+    results: dict[str, object] = {}
+    for risk in RiskCategory:
+        for goal in InvestmentGoal:
+            ranked = scoring_module.score_assets(features, risk_category=risk, goal=goal)
+            metrics = rank_eval.evaluate_ranking(ranked, risk_category=risk, goal=goal, k=k)
+            results[f"{risk}/{goal}"] = metrics.as_dict()
+            print(  # noqa: T201
+                f"{str(risk):<8}{str(goal):<18}"
+                f"{metrics.precision_at_k:>8.3f}{metrics.recall_at_k:>8.3f}"
+                f"{metrics.ndcg_at_k:>8.3f}{metrics.relevant_total:>10}"
+            )
+
+    # §18's reported-metrics discipline. The caveat travels with the numbers.
+    print(  # noqa: T201
+        "\nRelevance is rule-derived, not observed: no user has been advised, acted, and "
+        "had an outcome recorded. These measure agreement between the ranker and a "
+        "second rule in this repository — internal consistency, not correctness. "
+        "See Docs/MODELS/portfolio-optimizer.md."
+    )
+    return results

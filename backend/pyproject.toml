@@ -32,6 +32,10 @@ dependencies = [
     "xgboost-cpu>=2.1; platform_machine == 'x86_64' and sys_platform == 'linux'",
     "xgboost>=2.1; platform_machine != 'x86_64' or sys_platform != 'linux'",
     "joblib>=1.4",
+    # --- Recommendation (M4) ---
+    # Arrives transitively with scikit-learn, but the optimizer imports it
+    # directly, so it is declared rather than relied on as a side effect.
+    "scipy>=1.14",
 ]
 
 [project.optional-dependencies]
@@ -82,6 +86,7 @@ module = [
     "sklearn.*",
     "xgboost.*",
     "joblib.*",
+    "scipy.*",
 ]
 ignore_missing_imports = true
 

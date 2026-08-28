@@ -299,3 +299,35 @@ class TestPredictionEndpoint:
         body = client.get("/api/v1/market/NEW/prediction", headers=auth_headers).json()
         assert set(body["unavailable"]) == {"volatility", "momentum", "risk_score"}
         assert body["volatility"] is None
+
+
+class TestTrainingHoldout:
+    """§19 needs a period the model never saw. Training through yesterday leaves
+    none, so the holdout is what makes an out-of-sample backtest possible rather
+    than merely required."""
+
+    def test_a_holdout_moves_the_training_window_back(
+        self, db: Session, asset_with_history: Asset
+    ) -> None:
+        full = prediction_dataset.build_training_data(db)
+        reserved = prediction_dataset.build_training_data(db, holdout_days=200)
+
+        assert not reserved.is_empty
+        assert reserved.test_end < full.test_end
+
+    def test_the_reserved_period_is_absent_from_training(
+        self, db: Session, asset_with_history: Asset
+    ) -> None:
+        full = prediction_dataset.build_training_data(db)
+        reserved = prediction_dataset.build_training_data(db, holdout_days=200)
+
+        gap = (full.test_end - reserved.test_end).days
+        assert gap >= 150, f"only {gap} days were actually reserved"
+
+    def test_zero_holdout_trains_on_everything(
+        self, db: Session, asset_with_history: Asset
+    ) -> None:
+        assert (
+            prediction_dataset.build_training_data(db, holdout_days=0).test_end
+            == prediction_dataset.build_training_data(db).test_end
+        )

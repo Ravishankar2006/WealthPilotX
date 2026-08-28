@@ -106,10 +106,20 @@ jobs:
         run: |
           python -m app.jobs train-risk
           python -m app.jobs promote risk_classifier v1
-          python -m app.jobs train-prediction
+          # A reserved period, so §19's backtest has genuinely out-of-sample data.
+          python -m app.jobs train-prediction --holdout-days 200
           python -m app.jobs promote market_predictor v1 || \
             echo "market_predictor did not beat the baseline — expected on synthetic data"
           python -m app.jobs models
+
+      - name: Predictions generate for the whole universe
+        # The CLI half of FR-08. Portfolio generation needs a registered user with a
+        # profile and a risk assessment, which no CLI command can create — that path
+        # is covered end to end by tests/test_portfolio_api.py in the step below,
+        # and §19's backtest needs a stored portfolio, so neither is scripted here.
+        run: |
+          python -m app.jobs promote market_predictor v1 --force
+          python -m app.jobs predict
 
       - name: Tests
         run: pytest -q

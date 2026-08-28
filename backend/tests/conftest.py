@@ -115,7 +115,8 @@ def _clean_state() -> Iterator[None]:
             text(
                 "TRUNCATE users, financial_profiles, refresh_tokens, "
                 "assets, market_data, economic_indicators, ingestion_runs, "
-                "models, risk_assessments, predictions "
+                "models, risk_assessments, predictions, "
+                "portfolios, portfolio_assets, recommendations "
                 "RESTART IDENTITY CASCADE"
             )
         )

@@ -20,7 +20,9 @@ from app.models.financial_profile import FinancialProfile
 from app.models.ingestion_run import IngestionRun
 from app.models.market_data import MarketData
 from app.models.model_record import ModelRecord
+from app.models.portfolio import Portfolio, PortfolioAsset
 from app.models.prediction import Prediction
+from app.models.recommendation import Recommendation
 from app.models.refresh_token import RefreshToken
 from app.models.risk_assessment import RiskAssessment
 from app.models.user import User
@@ -41,7 +43,10 @@ __all__ = [
     "MarketData",
     "ModelRecord",
     "ModelStatus",
+    "Portfolio",
+    "PortfolioAsset",
     "Prediction",
+    "Recommendation",
     "RefreshToken",
     "RiskAppetite",
     "RiskAssessment",

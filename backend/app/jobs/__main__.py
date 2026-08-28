@@ -10,6 +10,8 @@ Commands:
     predict           FR-08. Write a prediction row per tracked asset.
     promote           §10.5. Promote a model, refusing a regression.
     models            List registered models and their promotion metric.
+    backtest          §19. Backtest the latest portfolio against a benchmark.
+    eval-recommendations  §18. Precision@K / Recall@K / NDCG for the ranker.
 
 Exit codes are meaningful, because a scheduler and a CI step both read them:
     0  SUCCESS
@@ -104,7 +106,16 @@ def build_parser() -> argparse.ArgumentParser:
     economic.add_argument("--provider", help="Override the configured economic provider.")
 
     commands.add_parser("train-risk", help="Train the FR-03 risk classifier.")
-    commands.add_parser("train-prediction", help="Train the FR-08 market predictor.")
+    train_prediction = commands.add_parser(
+        "train-prediction", help="Train the FR-08 market predictor."
+    )
+    train_prediction.add_argument(
+        "--holdout-days",
+        type=int,
+        default=0,
+        help="Reserve this many recent days from training, so §19's backtest has "
+        "genuinely out-of-sample data to measure against.",
+    )
     commands.add_parser("predict", help="Generate predictions for every tracked asset.")
 
     promote = commands.add_parser("promote", help="Promote a model to PRODUCTION (§10.5).")
@@ -119,6 +130,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     models = commands.add_parser("models", help="List registered models.")
     models.add_argument("--name", help="Limit to one model name.")
+
+    rank_eval = commands.add_parser(
+        "eval-recommendations", help="§18 ranking metrics for the recommendation engine."
+    )
+    rank_eval.add_argument("--k", type=int, default=10, help="Cut-off for P@K / R@K / NDCG.")
+
+    backtest = commands.add_parser("backtest", help="Backtest the latest portfolio (§19).")
+    backtest.add_argument("--email", help="Backtest this user's latest portfolio.")
+    backtest.add_argument("--months", type=int, default=12, help="Backtest window length.")
+    backtest.add_argument(
+        "--cost-bps",
+        type=float,
+        default=10.0,
+        help="Transaction cost per side, in basis points. Reported with the results.",
+    )
 
     return parser
 
@@ -248,7 +274,7 @@ def _dispatch(args: argparse.Namespace, db: Session, settings: Settings) -> int:
         return EXIT_OK
 
     if args.command == "train-prediction":
-        ml.train_prediction(db)
+        ml.train_prediction(db, holdout_days=args.holdout_days)
         return EXIT_OK
 
     if args.command == "predict":
@@ -261,6 +287,15 @@ def _dispatch(args: argparse.Namespace, db: Session, settings: Settings) -> int:
     if args.command == "models":
         ml.list_models(db, args.name)
         return EXIT_OK
+
+    if args.command == "eval-recommendations":
+        return EXIT_OK if ml.evaluate_recommendations(db, k=args.k) else EXIT_FAILED
+
+    if args.command == "backtest":
+        result = ml.backtest_portfolio(
+            db, user_email=args.email, months=args.months, cost_bps=args.cost_bps
+        )
+        return EXIT_OK if result is not None else EXIT_FAILED
 
     return EXIT_FAILED  # unreachable: argparse rejects an unknown command
 

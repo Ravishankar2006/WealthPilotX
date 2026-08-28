@@ -151,5 +151,17 @@ def chronological_split(
     )
 
 
-def build_training_data(db: Session, symbols: list[str] | None = None) -> TrainingData:
-    return chronological_split(build_pooled_matrix(db, symbols))
+def build_training_data(
+    db: Session, symbols: list[str] | None = None, *, holdout_days: int = 0
+) -> TrainingData:
+    """Assemble and split. `holdout_days` reserves the most recent period entirely.
+
+    §19 requires a backtest period separate from the training period, and a model
+    trained through yesterday leaves none. Reserving the tail here is what makes a
+    genuine out-of-sample backtest possible rather than theoretically required.
+    """
+    frame = build_pooled_matrix(db, symbols)
+    if holdout_days > 0 and not frame.empty:
+        cutoff = frame["date"].max() - pd.Timedelta(days=holdout_days)
+        frame = frame[frame["date"] <= cutoff]
+    return chronological_split(frame)
