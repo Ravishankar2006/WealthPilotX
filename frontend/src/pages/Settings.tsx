@@ -42,7 +42,9 @@ export default function Settings() {
     try {
       await api.delete("/user/profile");
       forgetSession();
-      navigate("/", { replace: true });
+      // /login, not /: clearing the session makes this page's own auth guard
+      // redirect there first, so naming another destination would be fiction.
+      navigate("/login", { replace: true });
     } catch {
       setError("Could not delete your account. Try again.");
       setDeleting(false);

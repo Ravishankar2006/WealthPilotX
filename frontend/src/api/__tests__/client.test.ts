@@ -66,4 +66,38 @@ describe("api client", () => {
     // Two calls only: the original and the failed refresh. No retry loop.
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+
+  // Regression: refresh tokens rotate on use, and the server treats a replayed
+  // token as theft by revoking the whole family. Two concurrent 401s must share
+  // one refresh — firing two would sign the user out. The dashboard issues two
+  // authenticated requests at once, so this fired on every token expiry.
+  it("shares a single refresh between concurrent 401s", async () => {
+    writeTokens({ accessToken: "stale", refreshToken: "refresh-1" });
+
+    let refreshCalls = 0;
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/auth/refresh")) {
+        refreshCalls += 1;
+        // A second refresh with the rotated token is what the server rejects.
+        if (refreshCalls > 1) return jsonResponse(ERROR_BODY, 401);
+        return jsonResponse({ access_token: "fresh", refresh_token: "refresh-2" }, 200);
+      }
+
+      return readTokens()?.accessToken === "fresh"
+        ? jsonResponse({ ok: true }, 200)
+        : jsonResponse(ERROR_BODY, 401);
+    });
+
+    const [a, b] = await Promise.all([
+      api.get<{ ok: boolean }>("/user/profile"),
+      api.get<{ ok: boolean }>("/user/profile/completeness"),
+    ]);
+
+    expect(a.ok).toBe(true);
+    expect(b.ok).toBe(true);
+    expect(refreshCalls).toBe(1);
+    expect(readTokens()?.refreshToken).toBe("refresh-2");
+  });
 });

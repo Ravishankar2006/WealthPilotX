@@ -37,10 +37,17 @@ async function parseError(response: Response): Promise<ApiError> {
 }
 
 /**
- * One refresh attempt per failed request, then give up. Retrying repeatedly
- * against an expired session just delays the redirect to login.
+ * A refresh in flight, shared by every caller that needs one.
+ *
+ * This must be single-flight. Refresh tokens rotate on use, and presenting an
+ * already-rotated token is treated server-side as theft — it revokes the whole
+ * token family. A page that issues two authenticated requests at once (the
+ * dashboard does) would otherwise fire two refreshes with the same token: the
+ * first rotates it, the second looks like a replay, and the user is signed out.
  */
-async function refreshSession(): Promise<boolean> {
+let inFlightRefresh: Promise<boolean> | null = null;
+
+async function performRefresh(): Promise<boolean> {
   const stored = readTokens();
   if (!stored) return false;
 
@@ -61,6 +68,17 @@ async function refreshSession(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * One refresh attempt per failed request, then give up. Concurrent callers join
+ * the refresh already running rather than starting their own.
+ */
+function refreshSession(): Promise<boolean> {
+  inFlightRefresh ??= performRefresh().finally(() => {
+    inFlightRefresh = null;
+  });
+  return inFlightRefresh;
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {

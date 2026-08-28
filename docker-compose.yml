@@ -26,6 +26,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       PROFILE_ENCRYPTION_KEY: ${PROFILE_ENCRYPTION_KEY:?PROFILE_ENCRYPTION_KEY is required}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      # The suite truncates tables, so it must never point at the app database.
+      # conftest.py refuses any database whose name lacks "test", and creates
+      # this one if it does not exist yet.
+      TEST_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-wpx}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-wealthpilotx}_test
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:

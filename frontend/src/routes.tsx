@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import type { ReactElement } from "react";
+import { useRef, type ReactElement } from "react";
 import { useAuth } from "./context/AuthContext";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
@@ -24,8 +24,18 @@ function RequireAuth({ children }: { children: ReactElement }) {
 
 function RedirectIfAuthenticated({ children }: { children: ReactElement }) {
   const { isAuthenticated, isLoading } = useAuth();
+
+  // Only the state at mount decides this. Redirecting on a *change* would hijack
+  // the navigation login and register perform themselves: signing up flipped this
+  // to true, the guard re-rendered first, and the new user landed on the dashboard
+  // instead of continuing to the profile form.
+  const authenticatedOnMount = useRef<boolean | null>(null);
+  if (authenticatedOnMount.current === null && !isLoading) {
+    authenticatedOnMount.current = isAuthenticated;
+  }
+
   if (isLoading) return null;
-  return isAuthenticated ? <Navigate to="/dashboard" replace /> : children;
+  return authenticatedOnMount.current ? <Navigate to="/dashboard" replace /> : children;
 }
 
 export function AppRoutes() {

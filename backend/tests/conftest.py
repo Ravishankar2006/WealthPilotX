@@ -41,6 +41,38 @@ from app.models import User  # noqa: E402  (registers every model on Base.metada
 
 TEST_DATABASE_URL = os.environ["DATABASE_URL"]
 
+
+def _ensure_database_exists(url: str) -> None:
+    """Create the test database if it is not there yet.
+
+    Without this, a fresh clone (or anyone who has just run `docker compose down
+    -v`) gets a connection error instead of a test run, and has to know to create
+    the database by hand. The name guard above already established that this is a
+    test database, so creating it is safe.
+    """
+    from sqlalchemy import URL, make_url
+
+    target: URL = make_url(url)
+    admin = create_engine(
+        target.set(database="postgres"), isolation_level="AUTOCOMMIT", pool_pre_ping=True
+    )
+    try:
+        with admin.connect() as connection:
+            exists = connection.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :name"),
+                {"name": target.database},
+            ).scalar()
+            if not exists:
+                # Identifier, so it cannot be parameterised; the name guard above
+                # plus this character check keep it safe to interpolate.
+                assert target.database and target.database.replace("_", "").isalnum()
+                connection.execute(text(f'CREATE DATABASE "{target.database}"'))
+    finally:
+        admin.dispose()
+
+
+_ensure_database_exists(TEST_DATABASE_URL)
+
 engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
 TestSessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 

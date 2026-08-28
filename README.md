@@ -60,16 +60,19 @@ environment change.
 ## Tests
 
 ```bash
-# Backend — needs the database running
-docker compose up -d db
+# Backend — the test database is created automatically on first run
 docker compose run --rm api pytest -q
 
 # Frontend
-docker compose run --rm web npm test
+docker compose run --rm --no-deps web npm test
 ```
 
 Backend tests run against real PostgreSQL, not SQLite. The schema uses native enums and UUID
 columns, so a SQLite substitute would exercise a different schema than the one that ships.
+
+They run against a separate `_test` database and truncate tables between tests. `conftest.py`
+refuses to start against any database whose name does not contain `test`, so a misconfigured
+`TEST_DATABASE_URL` fails loudly instead of wiping your development data.
 
 ## Migrations
 

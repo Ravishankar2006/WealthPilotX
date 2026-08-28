@@ -16,7 +16,12 @@ const INLINE_TEXT =
 
 export function PersistentDisclaimer() {
   return (
-    <footer className="border-t border-line bg-white/60 px-6 py-4" role="contentinfo">
+    // Sticky, not merely last in the document: §17.1 requires the disclaimer be
+    // persistent and unmissable, and on a long page a footer falls below the fold.
+    <footer
+      className="sticky bottom-0 z-10 border-t border-line bg-ground/95 px-6 py-4 backdrop-blur"
+      role="contentinfo"
+    >
       <p className="mx-auto max-w-3xl text-[13px] leading-relaxed text-ink-muted">
         <span className="font-medium text-ink-soft">Important. </span>
         {PERSISTENT_TEXT}
