@@ -40,6 +40,10 @@ docker compose up --build
 
 That is the whole setup. Migrations run automatically on API start.
 
+If ports 5432, 8000 or 5173 are already taken on your machine, override `POSTGRES_PORT`,
+`API_PORT` and `WEB_PORT` in `.env` — and update `VITE_API_BASE_URL` and `CORS_ORIGINS` to match
+the ports you chose.
+
 | Service | URL |
 |---|---|
 | Web | http://localhost:5173 |

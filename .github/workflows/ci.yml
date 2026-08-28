@@ -117,12 +117,15 @@ jobs:
       - name: Python advisories
         run: |
           pip install pip-audit
-          pip-audit --desc -r <(pip install -q -e ./backend --dry-run --report - 2>/dev/null || echo "") || \
-            (cd backend && pip install -e . -q && pip-audit --desc)
+          pip install -e ./backend
+          pip-audit --desc
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: npm advisories
-        run: cd frontend && npm install --package-lock-only && npm audit --audit-level=high
+        run: |
+          cd frontend
+          npm install --package-lock-only
+          npm audit --audit-level=high

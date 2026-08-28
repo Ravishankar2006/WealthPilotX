@@ -10,7 +10,8 @@ if (!container) throw new Error("Root element not found.");
 
 createRoot(container).render(
   <StrictMode>
-    <BrowserRouter>
+    {/* Opt in to the v7 behaviours now, so the upgrade is not a behaviour change. */}
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AuthProvider>
         <AppRoutes />
       </AuthProvider>

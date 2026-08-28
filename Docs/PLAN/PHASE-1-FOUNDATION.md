@@ -1,7 +1,8 @@
 # Phase 1 — Foundation (PRD Milestone M1)
 
 **Estimated duration:** 1–2 weeks solo/part-time (PRD §22)
-**Status:** Not started
+**Status:** All six stages implemented. Automated verification green; the interactive
+browser pass (§7 steps 1, 3, 4, 6) is still outstanding — see §10.
 **Exit condition:** A registered user can log in, save and retrieve a validated financial profile,
 delete their account, and see the required legal disclaimers — end to end, in Docker, with CI green.
 
@@ -112,53 +113,53 @@ Only the tables Phase 1 actually needs (PRD §12), plus one the PRD omits:
 Each stage is independently committable and leaves the repo green.
 
 ### Stage 1 — Skeleton that runs (≈1 day)
-- [ ] `docker compose up` brings up postgres + api + web; api answers `GET /api/v1/health` 200
-- [ ] `.env.example` with every var named; app refuses to boot on a missing required secret
-- [ ] Alembic wired, empty baseline revision applied
-- [ ] Vite React-TS app served, hitting `/api/v1/health` from the browser
+- [x] `docker compose up` brings up postgres + api + web; api answers `GET /api/v1/health` 200
+- [x] `.env.example` with every var named; app refuses to boot on a missing required secret
+- [x] Alembic wired, empty baseline revision applied
+- [x] Vite React-TS app served, hitting `/api/v1/health` from the browser
 
 ### Stage 2 — Cross-cutting API contract (≈1 day)
 Do this *before* the first real endpoint, so no endpoint ever ships non-conforming.
-- [ ] Global exception handlers emitting `{"error": {"code", "message", "fields"}}` for 400/401/403/404/409/422/500
-- [ ] `RequestValidationError` mapped to 422 with field-level detail
-- [ ] Correlation-ID middleware (accept inbound header, generate otherwise, echo in response + logs)
-- [ ] Structured JSON logging with a redaction filter that drops `income`, `savings`, `password`, `token`
-- [ ] Rate limiting: 100 req/min default, 429 with the standard envelope
+- [x] Global exception handlers emitting `{"error": {"code", "message", "fields"}}` for 400/401/403/404/409/422/500
+- [x] `RequestValidationError` mapped to 422 with field-level detail
+- [x] Correlation-ID middleware (accept inbound header, generate otherwise, echo in response + logs)
+- [x] Structured JSON logging with a redaction filter that drops `income`, `savings`, `password`, `token`
+- [x] Rate limiting: 100 req/min default, 429 with the standard envelope
 
 ### Stage 3 — Authentication, FR-01 (≈3 days)
-- [ ] `POST /auth/register` — argon2 hash, unique email, requires `tos_accepted: true`
-- [ ] Duplicate email → **409**; weak/invalid input → **422**
-- [ ] `POST /auth/login` → access + refresh token pair
-- [ ] `POST /auth/refresh` with rotation; reuse of a rotated token revokes the family
-- [ ] `POST /auth/logout` → refresh token denylisted
-- [ ] Protected-route dependency: missing/expired/malformed token → **401**
-- [ ] Tests: the four FR-01 acceptance criteria, plus a test asserting no plaintext password or hash
+- [x] `POST /auth/register` — argon2 hash, unique email, requires `tos_accepted: true`
+- [x] Duplicate email → **409**; weak/invalid input → **422**
+- [x] `POST /auth/login` → access + refresh token pair
+- [x] `POST /auth/refresh` with rotation; reuse of a rotated token revokes the family
+- [x] `POST /auth/logout` → refresh token denylisted
+- [x] Protected-route dependency: missing/expired/malformed token → **401**
+- [x] Tests: the four FR-01 acceptance criteria, plus a test asserting no plaintext password or hash
       appears in any log line
 
 ### Stage 4 — Financial profile, FR-02 (≈2 days)
-- [ ] `GET` / `PUT /api/v1/user/profile` — one profile per user, upsert semantics
-- [ ] Field validation: age 18–120, income ≥ 0, savings ≥ 0, horizon ≥ 1, enums closed
-- [ ] Out-of-range → **422** with `fields` populated per offending field
-- [ ] A `profile_completeness` helper listing missing required fields — the thing FR-03 will call to
+- [x] `GET` / `PUT /api/v1/user/profile` — one profile per user, upsert semantics
+- [x] Field validation: age 18–120, income ≥ 0, savings ≥ 0, horizon ≥ 1, enums closed
+- [x] Out-of-range → **422** with `fields` populated per offending field
+- [x] A `profile_completeness` helper listing missing required fields — the thing FR-03 will call to
       block risk assessment in M3
-- [ ] `DELETE /api/v1/user/profile` — erasure per §11.2, cascades profile and refresh tokens
-- [ ] Ownership test: user A cannot read or write user B's profile (§16.2)
+- [x] `DELETE /api/v1/user/profile` — erasure per §11.2, cascades profile and refresh tokens
+- [x] Ownership test: user A cannot read or write user B's profile (§16.2)
 
 ### Stage 5 — Frontend shell + disclaimers (≈2 days)
-- [ ] Tailwind configured; `<Disclaimer />` in persistent (footer) and inline (per-view) variants
-- [ ] Landing / Login / Register / Onboarding / Settings-&-Privacy pages
-- [ ] Register form gates submit on ToS + Privacy checkbox
-- [ ] Onboarding = the FR-02 profile form, field-level errors bound to the API's `fields` object
-- [ ] Settings page exposes export-my-data (stub is fine) and delete-my-account (wired to the real
+- [x] Tailwind configured; `<Disclaimer />` in persistent (footer) and inline (per-view) variants
+- [x] Landing / Login / Register / Onboarding / Settings-&-Privacy pages
+- [x] Register form gates submit on ToS + Privacy checkbox
+- [x] Onboarding = the FR-02 profile form, field-level errors bound to the API's `fields` object
+- [x] Settings page exposes export-my-data (stub is fine) and delete-my-account (wired to the real
       endpoint, behind a typed confirmation)
-- [ ] Protected routes redirect to login; client refreshes once on 401 then gives up
-- [ ] Vitest: renders login, renders register, disclaimer present on every authenticated layout
+- [x] Protected routes redirect to login; client refreshes once on 401 then gives up
+- [x] Vitest: renders login, renders register, disclaimer present on every authenticated layout
 
 ### Stage 6 — CI and close-out (≈1 day)
-- [ ] GitHub Actions: ruff + mypy, pytest against a service-container postgres, vitest, docker build
-- [ ] Dependency scan (`pip-audit` + `npm audit`) — non-blocking to start, reported
+- [x] GitHub Actions: ruff + mypy, pytest against a service-container postgres, vitest, docker build
+- [x] Dependency scan (`pip-audit` + `npm audit`) — non-blocking to start, reported
 - [ ] Branch protection: CI must pass to merge (§23)
-- [ ] `README.md` with a genuine one-command local setup
+- [x] `README.md` with a genuine one-command local setup
 - [ ] Manual QA pass against §7 below
 
 ---
@@ -206,3 +207,51 @@ Coverage percentage is not a Phase 1 gate; the acceptance-criteria tests are.
 M2 (Data Platform) starts by writing a `MarketDataProvider` interface (§7.3). It depends on Phase 1
 delivering: working migrations, the config/secrets pattern, structured logging with correlation IDs
 (background jobs reuse it), and the error envelope. Nothing else in M2 is blocked by M1.
+
+
+---
+
+## 10. Verification log
+
+Recorded 2026-08-28, against the stack running in Docker.
+
+### Green
+
+| Check | Result |
+|---|---|
+| Backend suite | 62 passed |
+| Frontend suite | 12 passed |
+| `ruff check` / `ruff format --check` | clean |
+| `mypy app` | no issues, 31 files |
+| Migration up → down → up | clean, including enum types |
+| Frontend production build | 187 kB JS / 13 kB CSS, no type errors |
+| API manual QA (steps 2, 4, 5, 6, 7, 8) | 13/13 assertions passed |
+| **QA step 9** — grep live container logs for a submitted income | **0 hits**; savings likewise |
+| Encryption at rest | column holds Fernet ciphertext; `SELECT ... LIKE '%99999%'` returns 0 while the API round-trips the value |
+
+### Bugs this stage caught
+
+Three defects that automated checks found before they could ship:
+
+1. **Every unmatched-route 404 escaped the error envelope.** The handler was registered on
+   `fastapi.HTTPException`, but Starlette's router raises `starlette.exceptions.HTTPException`,
+   which is its *parent* class — so those responses fell through to FastAPI's default
+   `{"detail": ...}` shape. Fixed by registering on the Starlette class.
+2. **Every profile save crashed.** `extra={"created": ...}` collides with a reserved
+   `LogRecord` attribute and raises `KeyError` inside the logging module. Fixed, and a
+   `safe_extra()` helper now makes the whole class of bug unreachable.
+3. **Alembic's autogenerated migration was broken in two ways** — it referenced
+   `app.core.crypto` without importing it (NameError on upgrade), and its downgrade left the
+   four native enum types behind, so downgrade-then-upgrade failed. Both fixed by hand, which
+   is why the plan says never to apply an autogenerated migration unread.
+
+### Still outstanding
+
+- **Interactive browser pass** — QA steps 1, 3, 4 and 6 need a human at the keyboard:
+  first-run experience on a clean volume, disclaimer visible without scrolling, inline field
+  errors rendering, and the silent token refresh. The Chrome extension was not connected
+  during this session, so these were verified at the API and unit-test level only.
+- **Branch protection** — a GitHub repository setting, not a file. CI is defined; requiring it
+  to pass before merge has to be switched on in the repo settings.
+- **Ports** — 5432, 5433 and 8000 were already occupied on the development machine, so `.env`
+  uses 55432 / 8010 / 5183. `.env.example` keeps the conventional defaults.
