@@ -317,5 +317,5 @@ Recorded 2026-08-28, against the stack running in Docker.
   `market_service.py`.
 - **Ports** — as in M1, this machine uses 55432 / 8010 / 5183 rather than the
   conventional defaults kept in `.env.example`.
-- **Branch protection** remains the one item outstanding from M1: a repository
-  setting, not a file.
+- **Branch protection** is declined as a standing decision, not outstanding work —
+  see Phase 1 §10 for the reasoning and the conditions that should reopen it.

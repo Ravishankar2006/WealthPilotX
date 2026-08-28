@@ -2,7 +2,7 @@
 
 **Estimated duration:** 1–2 weeks solo/part-time (PRD §22)
 **Status:** Complete. All six stages implemented and verified, including the full §7 manual QA
-pass in a real browser. Branch protection is the only outstanding item — see §10.
+pass in a real browser. Branch protection was considered and declined — see §10.
 **Exit condition:** A registered user can log in, save and retrieve a validated financial profile,
 delete their account, and see the required legal disclaimers — end to end, in Docker, with CI green.
 
@@ -158,7 +158,7 @@ Do this *before* the first real endpoint, so no endpoint ever ships non-conformi
 ### Stage 6 — CI and close-out (≈1 day)
 - [x] GitHub Actions: ruff + mypy, pytest against a service-container postgres, vitest, docker build
 - [x] Dependency scan (`pip-audit` + `npm audit`) — non-blocking to start, reported
-- [ ] Branch protection: CI must pass to merge (§23)
+- [x] ~~Branch protection: CI must pass to merge (§23)~~ — declined, see §10
 - [x] `README.md` with a genuine one-command local setup
 - [x] Manual QA pass against §7 below
 
@@ -293,8 +293,18 @@ Both routing bugs have regression tests; so does the refresh race.
 
 ### Still outstanding
 
-- **Branch protection** — a GitHub repository setting, not a file. CI is defined; requiring it
-  to pass before merge has to be switched on in the repo settings. This is the only unticked
-  item in the plan.
+- **Branch protection — deliberately not enabled.** PRD §23 asks for "a passing status
+  required to merge". The first half is in place: CI runs on every pull request *and* on every
+  push to `main`. The gate itself is declined as a standing decision — this is a
+  single-committer project developed directly on `main`, so a required-PR rule would add a
+  branch-and-PR round trip per change while blocking nobody but its author.
+
+  What this costs: a broken commit reaches `main` before CI reports on it, rather than being
+  stopped at the boundary. On a solo project the exposure is the few minutes until the run
+  finishes, and the fix is to push again.
+
+  Revisit this the moment a second committer appears, or before any deployment where `main` is
+  what ships — at that point the gate starts protecting someone other than the person who
+  wrote the change, which is the situation it is actually for.
 - **Ports** — 5432, 5433 and 8000 were already occupied on the development machine, so `.env`
   uses 55432 / 8010 / 5183. `.env.example` keeps the conventional defaults.
