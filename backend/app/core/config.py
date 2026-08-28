@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     # than 24 so a normal weekend does not raise an alert every Sunday.
     market_data_stale_after_hours: int = 48
 
+    # --- ML (M3) ---
+    # Where model artifacts live (§10.5). A mounted directory, not S3: no deployment
+    # target is chosen yet, and the registry row carries the path either way.
+    model_artifact_dir: str = "/srv/artifacts"
+
+    # Training population for the risk classifier. Tests override it downward.
+    risk_training_population: int = 20_000
+
     # FR-06: absolute daily log return beyond this is counted as an outlier in the
     # quality report. It is a reporting threshold, not a filter — see decision 4 of
     # the Phase 2 plan; rows are flagged and kept, never dropped.

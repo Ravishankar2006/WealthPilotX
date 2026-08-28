@@ -29,6 +29,7 @@ services:
       MARKET_DATA_PROVIDER: ${MARKET_DATA_PROVIDER:-synthetic}
       ECONOMIC_DATA_PROVIDER: ${ECONOMIC_DATA_PROVIDER:-synthetic}
       FRED_API_KEY: ${FRED_API_KEY:-}
+      MODEL_ARTIFACT_DIR: /srv/artifacts
       # The suite truncates tables, so it must never point at the app database.
       # conftest.py refuses any database whose name lacks "test", and creates
       # this one if it does not exist yet.
@@ -38,6 +39,9 @@ services:
     volumes:
       # :z relabels for SELinux (Fedora, RHEL). A no-op elsewhere.
       - ./backend:/srv:z
+      # Shared with the scheduler, which trains; a named volume rather than a bind
+      # mount so artifacts survive a rebuild without landing in the repo.
+      - artifacts:/srv/artifacts
     depends_on:
       db:
         condition: service_healthy
@@ -66,8 +70,10 @@ services:
       MARKET_DATA_PROVIDER: ${MARKET_DATA_PROVIDER:-synthetic}
       ECONOMIC_DATA_PROVIDER: ${ECONOMIC_DATA_PROVIDER:-synthetic}
       FRED_API_KEY: ${FRED_API_KEY:-}
+      MODEL_ARTIFACT_DIR: /srv/artifacts
     volumes:
       - ./backend:/srv:z
+      - artifacts:/srv/artifacts
     depends_on:
       # Waits for the API because the API applies the migrations; starting against
       # a schema that does not exist yet would just crash-loop until it did.
@@ -96,3 +102,4 @@ services:
 
 volumes:
   pgdata:
+  artifacts:

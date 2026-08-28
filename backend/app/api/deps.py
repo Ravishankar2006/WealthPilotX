@@ -9,6 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.core.ratelimit import limiter
 from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.user import User
@@ -56,3 +57,25 @@ def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+class UserRateLimit:
+    """Per-user rate limiting for authenticated routes (§13.1).
+
+    `RateLimit` keys on `request.state.user_id` when it is set, and falls back to the
+    source address otherwise. Declared as a route-level `dependencies=[...]` entry it
+    runs *before* the endpoint's own `CurrentUser` parameter is resolved, so
+    `user_id` is never set yet and the limit silently degrades to per-IP. §13.1 asks
+    for 10 requests/minute **per user** on the expensive endpoints; per-IP means two
+    people behind one office NAT share one budget, and either can exhaust the other's.
+
+    Taking `CurrentUser` as a parameter here is what fixes it: FastAPI resolves a
+    dependency's own dependencies before calling it, so the user is always known.
+    """
+
+    def __init__(self, bucket: str, limit: int) -> None:
+        self.bucket = bucket
+        self.limit = limit
+
+    def __call__(self, user: "CurrentUser") -> None:
+        limiter.check(f"user:{user.id}", self.bucket, self.limit)

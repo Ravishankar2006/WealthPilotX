@@ -37,6 +37,10 @@ jobs:
       # a bad afternoon tells us nothing about the change under review.
       MARKET_DATA_PROVIDER: synthetic
       ECONOMIC_DATA_PROVIDER: synthetic
+      MODEL_ARTIFACT_DIR: /tmp/wpx-artifacts
+      # 20k profiles is the production default; 2k reproduces the same behaviour
+      # and keeps the pipeline honest about its own runtime.
+      RISK_TRAINING_POPULATION: "2000"
 
     defaults:
       run:
@@ -91,8 +95,21 @@ jobs:
         # loading, and the exit codes the scheduler reads.
         run: |
           python -m app.jobs seed-assets
-          python -m app.jobs ingest-market --backfill-days 30
+          # Enough history for the 60-day indicators plus a usable train/test split.
+          python -m app.jobs ingest-market --backfill-days 1100
           python -m app.jobs ingest-economic
+
+      - name: ML pipeline trains, gates and serves
+        # §10.5 exercised as an operator runs it. The promotion gate in particular:
+        # a registry that promotes whatever it is handed is governance theatre, and
+        # only an end-to-end run catches a gate wired up wrong.
+        run: |
+          python -m app.jobs train-risk
+          python -m app.jobs promote risk_classifier v1
+          python -m app.jobs train-prediction
+          python -m app.jobs promote market_predictor v1 || \
+            echo "market_predictor did not beat the baseline — expected on synthetic data"
+          python -m app.jobs models
 
       - name: Tests
         run: pytest -q

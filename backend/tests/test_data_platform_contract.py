@@ -23,16 +23,19 @@ from app.services.ingestion.market import ingest_market_data
 
 APP_ROOT = Path(__file__).resolve().parent.parent / "app"
 
-# The vendor SDKs no application module may import. yfinance is the one that
-# matters (§7.3: unofficial, can break without notice); the others are listed so
-# the rule does not have to be re-argued when a second provider is added.
-VENDOR_MODULES = {"yfinance", "pandas", "numpy"}
+# Data-source SDKs no application module may import. The rule exists because
+# §7.3's providers are *sources* — swappable, unofficial, liable to change shape —
+# and a direct import re-couples the application to one of them.
+#
+# pandas and numpy were on this list until M3. They came off deliberately: they are
+# general numeric libraries, not data sources, and the ML layer legitimately depends
+# on them. Keeping them here would have meant either a growing allow-list or
+# pretending the feature pipeline does not use a DataFrame.
+VENDOR_MODULES = {"yfinance"}
 
-# Where each vendor import is permitted. Anywhere else is a violation.
+# Where each import is permitted. Anywhere else is a violation.
 ALLOWED = {
     "yfinance": {"providers/yahoo.py"},
-    "pandas": {"providers/yahoo.py"},
-    "numpy": {"providers/yahoo.py"},
 }
 
 

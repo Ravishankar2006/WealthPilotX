@@ -19,6 +19,19 @@ dependencies = [
     "httpx>=0.28",          # FRED client
     "yfinance>=0.2.50",     # imported only by app/providers/yahoo.py (§7.3)
     "apscheduler>=3.11",    # the scheduler container's cron
+    # --- ML (M3) ---
+    # Python is pinned to 3.12 in the Dockerfile precisely so these have wheels.
+    "numpy>=2.1",
+    "pandas>=2.2",
+    "scikit-learn>=1.6",
+    # xgboost-cpu, not xgboost: the default wheel pulls nvidia-nccl for multi-GPU
+    # training — a 252 MB download this project will never use, since PRD §7.2
+    # scopes training to a single modest workstation. The CPU wheel is published
+    # for linux/x86_64 and Windows only, so other platforms fall back to the
+    # standard package.
+    "xgboost-cpu>=2.1; platform_machine == 'x86_64' and sys_platform == 'linux'",
+    "xgboost>=2.1; platform_machine != 'x86_64' or sys_platform != 'linux'",
+    "joblib>=1.4",
 ]
 
 [project.optional-dependencies]
@@ -59,9 +72,27 @@ exclude = "^(alembic|tests)/"
 # them (§7.3 keeps the vendor surface small), so this silences the stub warning
 # without weakening checking anywhere else.
 [[tool.mypy.overrides]]
-module = ["yfinance.*", "apscheduler.*"]
+module = [
+    "yfinance.*",
+    "apscheduler.*",
+    # The ML stack ships no py.typed marker. pandas-stubs exists but is strict
+    # enough to generate substantial churn on legitimate DataFrame code; the
+    # ignore is confined to these imports rather than weakening checking anywhere.
+    "pandas.*",
+    "sklearn.*",
+    "xgboost.*",
+    "joblib.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-filterwarnings = ["error::DeprecationWarning"]
+filterwarnings = [
+    "error::DeprecationWarning",
+    # joblib's array reconstruction assigns to `array.shape`, which NumPy 2.5
+    # deprecated. It fires on every model artifact load, so escalating it would make
+    # the ML suite unrunnable over a third-party incompatibility we cannot fix here.
+    # Scoped to that one message in that one module, so the project-wide
+    # error-on-deprecation policy is untouched everywhere else.
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning:joblib.numpy_pickle",
+]

@@ -5,6 +5,11 @@ Commands:
     ingest-market     FR-04. Incremental by default; --backfill-days for history.
     ingest-economic   FR-05. Fetches the five tracked FRED series.
     bootstrap         Seed, then backfill *only if* no market data exists yet.
+    train-risk        FR-03. Train the risk classifier on the rubric population.
+    train-prediction  FR-08. Train the market predictor on stored history.
+    predict           FR-08. Write a prediction row per tracked asset.
+    promote           §10.5. Promote a model, refusing a regression.
+    models            List registered models and their promotion metric.
 
 Exit codes are meaningful, because a scheduler and a CI step both read them:
     0  SUCCESS
@@ -20,7 +25,8 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
+from app.core.errors import AppError
 from app.core.logging import configure_logging, correlation_id, get_logger, safe_extra
 from app.db.session import SessionLocal
 from app.models.enums import EconomicSeries, IngestionStatus
@@ -86,9 +92,33 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[str(series) for series in EconomicSeries],
         help="Limit to these series. Defaults to all five.",
     )
+    economic.add_argument(
+        "--backfill-days",
+        type=int,
+        help="Fetch this many days of history instead of the default revision window. "
+        "Needed for a first load: the M3 feature pipeline joins these onto years of "
+        "price history, and the default 365-day window leaves older rows uncovered.",
+    )
     economic.add_argument("--start", type=_parse_date, help="Explicit window start (YYYY-MM-DD).")
     economic.add_argument("--end", type=_parse_date, help="Explicit window end (YYYY-MM-DD).")
     economic.add_argument("--provider", help="Override the configured economic provider.")
+
+    commands.add_parser("train-risk", help="Train the FR-03 risk classifier.")
+    commands.add_parser("train-prediction", help="Train the FR-08 market predictor.")
+    commands.add_parser("predict", help="Generate predictions for every tracked asset.")
+
+    promote = commands.add_parser("promote", help="Promote a model to PRODUCTION (§10.5).")
+    promote.add_argument("name", help="Model name, e.g. risk_classifier.")
+    promote.add_argument("version", help="Version to promote, e.g. v1.")
+    promote.add_argument(
+        "--force",
+        action="store_true",
+        help="Promote despite losing to the incumbent. For a genuinely incomparable "
+        "metric only — a changed target or feature set. Logged loudly.",
+    )
+
+    models = commands.add_parser("models", help="List registered models.")
+    models.add_argument("--name", help="Limit to one model name.")
 
     return parser
 
@@ -130,7 +160,14 @@ def _bootstrap(db: Session, backfill_days: int) -> int:
         start=end - timedelta(days=backfill_days),
         end=end,
     )
-    economic = ingest_economic_data(db, get_economic_provider(), end=end)
+    # Same window as the market backfill: macro data that starts years after the
+    # price history leaves the older rows without a value.
+    economic = ingest_economic_data(
+        db,
+        get_economic_provider(),
+        start=end - timedelta(days=backfill_days),
+        end=end,
+    )
 
     for run in (market, economic):
         _report(run)
@@ -151,41 +188,79 @@ def main(argv: list[str] | None = None) -> int:
 
     db = SessionLocal()
     try:
-        if args.command == "seed-assets":
-            created, updated = seed_assets(db)
-            print(f"seed-assets: {created} created, {updated} updated")  # noqa: T201
-            return EXIT_OK
-
-        if args.command == "bootstrap":
-            return _bootstrap(db, settings.ingestion_backfill_days)
-
-        if args.command == "ingest-market":
-            start = args.start
-            if start is None and args.backfill_days:
-                end = args.end or datetime.now(UTC).date()
-                start = end - timedelta(days=args.backfill_days)
-            return _report(
-                ingest_market_data(
-                    db,
-                    get_market_provider(args.provider),
-                    symbols=args.symbols,
-                    start=start,
-                    end=args.end,
-                )
-            )
-
-        if args.command == "ingest-economic":
-            return _report(
-                ingest_economic_data(
-                    db,
-                    get_economic_provider(args.provider),
-                    series=[EconomicSeries(s) for s in args.series] if args.series else None,
-                    start=args.start,
-                    end=args.end,
-                )
-            )
+        return _dispatch(args, db, settings)
+    except AppError as exc:
+        # AppError carries a message written for a human — a refused promotion, an
+        # unknown model version. Printing that and exiting non-zero is the useful
+        # behaviour; a traceback buries the message and implies the tool broke
+        # rather than that it did its job and said no.
+        print(f"error: {exc.message}", file=sys.stderr)  # noqa: T201
+        return EXIT_FAILED
     finally:
         db.close()
+
+
+def _dispatch(args: argparse.Namespace, db: Session, settings: Settings) -> int:
+    if args.command == "seed-assets":
+        created, updated = seed_assets(db)
+        print(f"seed-assets: {created} created, {updated} updated")  # noqa: T201
+        return EXIT_OK
+
+    if args.command == "bootstrap":
+        return _bootstrap(db, settings.ingestion_backfill_days)
+
+    if args.command == "ingest-market":
+        start = args.start
+        if start is None and args.backfill_days:
+            end = args.end or datetime.now(UTC).date()
+            start = end - timedelta(days=args.backfill_days)
+        return _report(
+            ingest_market_data(
+                db,
+                get_market_provider(args.provider),
+                symbols=args.symbols,
+                start=start,
+                end=args.end,
+            )
+        )
+
+    if args.command == "ingest-economic":
+        start = args.start
+        if start is None and args.backfill_days:
+            end = args.end or datetime.now(UTC).date()
+            start = end - timedelta(days=args.backfill_days)
+        return _report(
+            ingest_economic_data(
+                db,
+                get_economic_provider(args.provider),
+                series=[EconomicSeries(s) for s in args.series] if args.series else None,
+                start=start,
+                end=args.end,
+            )
+        )
+
+    # Imported lazily: these pull in the ML stack, and `seed-assets` has no business
+    # paying that import cost just to parse its arguments.
+    from app.jobs import ml
+
+    if args.command == "train-risk":
+        ml.train_risk(db)
+        return EXIT_OK
+
+    if args.command == "train-prediction":
+        ml.train_prediction(db)
+        return EXIT_OK
+
+    if args.command == "predict":
+        return EXIT_OK if ml.generate_predictions(db) else EXIT_FAILED
+
+    if args.command == "promote":
+        ml.promote(db, args.name, args.version, force=args.force)
+        return EXIT_OK
+
+    if args.command == "models":
+        ml.list_models(db, args.name)
+        return EXIT_OK
 
     return EXIT_FAILED  # unreachable: argparse rejects an unknown command
 

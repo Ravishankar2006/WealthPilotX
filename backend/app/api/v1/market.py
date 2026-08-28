@@ -5,7 +5,9 @@ Authenticated like everything else outside `/auth/register` and `/auth/login`
 sensitive a payload happens to be, and a uniform rule is one fewer thing to get
 wrong when an endpoint later starts returning something personal.
 
-`GET /market/{symbol}/prediction` is not here: it needs the XGBoost model from M3.
+`GET /market/{symbol}/prediction` also carries FR-09's asset-analysis metrics: they
+are the same feature-pipeline outputs for the same asset, and §13.2 lists no separate
+asset-analysis route to put them on.
 """
 
 from datetime import date as date_type
@@ -24,7 +26,8 @@ from app.schemas.market import (
     MarketHistoryResponse,
     PriceBarOut,
 )
-from app.services import market_service
+from app.schemas.risk import PredictionOut
+from app.services import market_service, prediction_service
 
 router = APIRouter(prefix="/market", tags=["market"])
 
@@ -56,6 +59,33 @@ def list_assets(
         data=[AssetOut.model_validate(asset) for asset in assets],
         next_cursor=next_cursor,
     )
+
+
+@router.get(
+    "/{symbol}/prediction",
+    response_model=PredictionOut,
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+def read_prediction(symbol: str, user: CurrentUser, db: DbSession) -> PredictionOut:
+    """FR-08's prediction plus FR-09's asset metrics.
+
+    Reads the stored prediction rather than running the model per request: §16.1
+    allows 5 seconds for an ML prediction, but the feature pipeline needs a year of
+    history per asset, and recomputing that on every dashboard load would spend it
+    all on work the nightly job already did.
+    """
+    asset = market_service.get_asset(db, symbol)
+    try:
+        return prediction_service.asset_prediction(db, asset)
+    except prediction_service.NoPredictionError as exc:
+        raise AppError(
+            404,
+            "no_prediction",
+            f"No prediction is available for {asset.symbol}: {exc.reason}.",
+        ) from exc
 
 
 @router.get(

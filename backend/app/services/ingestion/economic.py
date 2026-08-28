@@ -26,6 +26,10 @@ logger = get_logger(__name__)
 # Macro series are revised for months after first release, and GDP is quarterly, so
 # a short incremental window would keep re-fetching the same handful of points and
 # still miss revisions. A year is cheap — five requests — and catches them all.
+#
+# It is *not* enough for a first load, though: the M3 feature pipeline joins these
+# onto years of price history, and a twelve-month macro window leaves every older
+# row without a value. `--backfill-days` covers that case; see `app.jobs bootstrap`.
 DEFAULT_LOOKBACK_DAYS = 365
 
 

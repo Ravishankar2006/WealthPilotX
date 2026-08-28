@@ -81,3 +81,24 @@ class IngestionStatus(enum.StrEnum):
     SUCCESS = "SUCCESS"
     PARTIAL = "PARTIAL"
     FAILED = "FAILED"
+
+
+class ModelStatus(enum.StrEnum):
+    """Model lifecycle (§10.5). A model serves traffic only in PRODUCTION."""
+
+    EXPERIMENT = "EXPERIMENT"
+    PRODUCTION = "PRODUCTION"
+    RETIRED = "RETIRED"
+
+
+class TrendDirection(enum.StrEnum):
+    """FR-08's trend output.
+
+    FLAT exists so the model can decline to call a direction. Without it, a
+    predicted return of +0.02% would be reported as "UP" with the same vocabulary
+    as a predicted 8% rally, which overstates what the model actually said.
+    """
+
+    UP = "UP"
+    DOWN = "DOWN"
+    FLAT = "FLAT"

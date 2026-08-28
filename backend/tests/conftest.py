@@ -6,6 +6,7 @@ test a different schema than the one that ships.
 """
 
 import os
+import tempfile
 import uuid
 from collections.abc import Iterator
 
@@ -24,6 +25,14 @@ os.environ.setdefault("PROFILE_ENCRYPTION_KEY", "test-profile-encryption-key-at-
 # seeded, so tests can assert on values rather than on "some rows appeared".
 os.environ["MARKET_DATA_PROVIDER"] = "synthetic"
 os.environ["ECONOMIC_DATA_PROVIDER"] = "synthetic"
+
+# Model artifacts go to a scratch directory, never the mounted volume the running
+# stack serves from — a test run must not be able to replace a promoted model.
+_ARTIFACT_DIR = tempfile.mkdtemp(prefix="wpx-test-artifacts-")
+os.environ["MODEL_ARTIFACT_DIR"] = _ARTIFACT_DIR
+# 20k profiles per training run would dominate the suite; 2k reproduces the same
+# behaviour in a fraction of the time.
+os.environ["RISK_TRAINING_POPULATION"] = "2000"
 
 os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+psycopg://wpx:wpx@localhost:5432/wpx_test"
@@ -105,7 +114,8 @@ def _clean_state() -> Iterator[None]:
         connection.execute(
             text(
                 "TRUNCATE users, financial_profiles, refresh_tokens, "
-                "assets, market_data, economic_indicators, ingestion_runs "
+                "assets, market_data, economic_indicators, ingestion_runs, "
+                "models, risk_assessments, predictions "
                 "RESTART IDENTITY CASCADE"
             )
         )
