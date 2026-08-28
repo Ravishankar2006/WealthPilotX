@@ -22,7 +22,7 @@ export function PersistentDisclaimer() {
       className="sticky bottom-0 z-10 border-t border-line bg-ground/95 px-6 py-4 backdrop-blur"
       role="contentinfo"
     >
-      <p className="mx-auto max-w-3xl text-[13px] leading-relaxed text-ink-muted">
+      <p className="mx-auto max-w-5xl text-[13px] leading-relaxed text-ink-muted">
         <span className="font-medium text-ink-soft">Important. </span>
         {PERSISTENT_TEXT}
       </p>

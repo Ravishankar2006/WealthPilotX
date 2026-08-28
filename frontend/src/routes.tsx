@@ -6,6 +6,10 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
+import Market from "./pages/Market";
+import PortfolioPage from "./pages/Portfolio";
+import RecommendationDetail from "./pages/RecommendationDetail";
+import RiskProfile from "./pages/RiskProfile";
 import Settings from "./pages/Settings";
 
 function RequireAuth({ children }: { children: ReactElement }) {
@@ -71,6 +75,38 @@ export function AppRoutes() {
         element={
           <RequireAuth>
             <Dashboard />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/risk"
+        element={
+          <RequireAuth>
+            <RiskProfile />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/portfolio"
+        element={
+          <RequireAuth>
+            <PortfolioPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/market"
+        element={
+          <RequireAuth>
+            <Market />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/recommendation/:id"
+        element={
+          <RequireAuth>
+            <RecommendationDetail />
           </RequireAuth>
         }
       />

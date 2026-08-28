@@ -5,7 +5,9 @@ import { PersistentDisclaimer } from "./Disclaimer";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard" },
-  { to: "/onboarding", label: "Financial profile" },
+  { to: "/portfolio", label: "Portfolio" },
+  { to: "/market", label: "Markets" },
+  { to: "/risk", label: "Risk" },
   { to: "/settings", label: "Data & privacy" },
 ];
 
@@ -21,7 +23,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="border-b border-line bg-white">
-        <div className="mx-auto flex max-w-5xl items-center gap-6 px-6 py-3">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-6 py-3">
           <Link to="/dashboard" className="font-mono text-sm font-medium tracking-wide text-accent">
             WealthPilotX
           </Link>
@@ -48,7 +50,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">{children}</main>
+      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">{children}</main>
 
       <PersistentDisclaimer />
     </div>
