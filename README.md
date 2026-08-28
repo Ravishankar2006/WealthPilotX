@@ -10,19 +10,20 @@ past performance do not guarantee future results.
 
 ---
 
-## Current status — Milestone 1 (Foundation)
+## Current status — Milestone 2 (Data Platform)
 
 | Milestone | Scope | Status |
 |---|---|---|
-| **M1 — Foundation** | Docker, PostgreSQL, FastAPI, React, authentication, financial profile, disclaimers, CI | **In progress** |
-| M2 — Data Platform | Market and economic ingestion behind a provider interface | Not started |
+| M1 — Foundation | Docker, PostgreSQL, FastAPI, React, authentication, financial profile, disclaimers, CI | Complete |
+| **M2 — Data Platform** | Market and economic ingestion behind a provider interface | **In progress** |
 | M3 — ML | Feature engineering, risk model, market prediction, model registry | Not started |
 | M4 — Recommendation | Asset scoring, recommendation engine, optimisation, backtesting | Not started |
 | M5 — UI | Dashboard, charts, risk and portfolio visualisation | Not started |
 | M6 — Advanced AI | SHAP, fairness, monitoring, hardening | Not started |
 
-The full plan is in [`Docs/PLAN/PHASE-1-FOUNDATION.md`](Docs/PLAN/PHASE-1-FOUNDATION.md); the product
-specification is `Docs/PRD/WealthPilotX_PRD_v2.docx`.
+Phase plans: [`PHASE-1-FOUNDATION.md`](Docs/PLAN/PHASE-1-FOUNDATION.md) ·
+[`PHASE-2-DATA-PLATFORM.md`](Docs/PLAN/PHASE-2-DATA-PLATFORM.md). The product specification is
+`Docs/PRD/WealthPilotX_PRD_v2.docx`.
 
 ## Running it locally
 
@@ -38,7 +39,8 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 docker compose up --build
 ```
 
-That is the whole setup. Migrations run automatically on API start.
+That is the whole setup. Migrations run automatically on API start, and the scheduler container
+seeds the tracked asset universe before taking over ingestion on its cron.
 
 If ports 5432, 8000 or 5173 are already taken on your machine, override `POSTGRES_PORT`,
 `API_PORT` and `WEB_PORT` in `.env` — and update `VITE_API_BASE_URL` and `CORS_ORIGINS` to match
@@ -50,6 +52,49 @@ the ports you chose.
 | API | http://localhost:8000/api/v1 |
 | API docs | http://localhost:8000/docs (disabled in production) |
 | Health | http://localhost:8000/api/v1/health |
+
+## Market and economic data
+
+Ingestion is a set of CLI jobs. The scheduler container runs them on a cron; you can run any of them
+by hand exactly as it does.
+
+```bash
+# Insert or refresh the 32 tracked symbols. Idempotent.
+docker compose exec api python -m app.jobs seed-assets
+
+# Daily OHLCV. Resumes from the last stored bar unless you ask for history.
+docker compose exec api python -m app.jobs ingest-market
+docker compose exec api python -m app.jobs ingest-market --backfill-days 730
+docker compose exec api python -m app.jobs ingest-market --symbols SPY QQQ
+
+# The five FRED macro series.
+docker compose exec api python -m app.jobs ingest-economic
+```
+
+Exit codes are meaningful: `0` success, `1` nothing ingested, `2` partial — some symbols failed.
+A partial run is deliberately not a success, because the gap it leaves is otherwise invisible.
+
+### Providers
+
+All market and economic access goes through the interfaces in `app/providers/` (PRD §7.3). Yahoo
+Finance is unofficial and can change without notice, so **nothing outside `app/providers/yahoo.py`
+may import `yfinance`** — a test enforces this.
+
+| Setting | Values | Default |
+|---|---|---|
+| `MARKET_DATA_PROVIDER` | `synthetic`, `yahoo` | `synthetic` |
+| `ECONOMIC_DATA_PROVIDER` | `synthetic`, `fred` | `synthetic` |
+| `FRED_API_KEY` | required only for `fred` | unset |
+
+`synthetic` is the default so a fresh clone has working data with no network and no API keys. It is
+a seeded random walk — deterministic, useful for development and tests, and never a basis for a
+model that ships. Rows it produces are stamped `source = "synthetic"` so they are one query away
+from being found.
+
+Ingestion state is reported on `/api/v1/health` under `ingestion`: a failed or stale job sets
+`status` to `degraded` while leaving the HTTP code at 200, because the API still serves stored data
+perfectly well and taking it out of rotation over a background job would turn a freshness problem
+into an outage.
 
 ### A note on `PROFILE_ENCRYPTION_KEY`
 
@@ -98,8 +143,10 @@ describes itself.
 backend/          FastAPI service
   app/core/       Config, security, crypto, logging, errors, rate limiting
   app/models/     SQLAlchemy models
-  app/api/v1/     Routes — auth, user, health
-  app/services/   Business logic
+  app/api/v1/     Routes — auth, user, health, market
+  app/providers/  Data-provider abstraction (§7.3) — the only place a vendor SDK lives
+  app/services/   Business logic, including the ingestion pipeline
+  app/jobs/       CLI jobs and the scheduler entrypoint
   tests/          Pytest — unit, integration, security
 frontend/         React + TypeScript + Tailwind
   src/api/        Typed client with refresh-on-401

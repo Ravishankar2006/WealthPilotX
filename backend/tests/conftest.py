@@ -11,7 +11,7 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 # Forced, not defaulted: a compose or shell environment that already sets these
@@ -19,6 +19,12 @@ from sqlalchemy.orm import Session, sessionmaker
 os.environ["ENVIRONMENT"] = "test"
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-value-at-least-32-characters-long")
 os.environ.setdefault("PROFILE_ENCRYPTION_KEY", "test-profile-encryption-key-at-least-32-chars")
+# §7.3 — the suite never touches a third-party API. A red build caused by Yahoo
+# having a bad afternoon teaches nobody anything, and the synthetic providers are
+# seeded, so tests can assert on values rather than on "some rows appeared".
+os.environ["MARKET_DATA_PROVIDER"] = "synthetic"
+os.environ["ECONOMIC_DATA_PROVIDER"] = "synthetic"
+
 os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+psycopg://wpx:wpx@localhost:5432/wpx_test"
 )
@@ -37,7 +43,11 @@ from app.core.ratelimit import limiter  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.session import get_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import User  # noqa: E402  (registers every model on Base.metadata)
+from app.models import Asset, User  # noqa: E402  (registers every model on Base.metadata)
+from app.providers.synthetic import (  # noqa: E402
+    SyntheticEconomicDataProvider,
+    SyntheticMarketDataProvider,
+)
 
 TEST_DATABASE_URL = os.environ["DATABASE_URL"]
 
@@ -93,7 +103,11 @@ def _clean_state() -> Iterator[None]:
     yield
     with engine.begin() as connection:
         connection.execute(
-            text("TRUNCATE users, financial_profiles, refresh_tokens RESTART IDENTITY CASCADE")
+            text(
+                "TRUNCATE users, financial_profiles, refresh_tokens, "
+                "assets, market_data, economic_indicators, ingestion_runs "
+                "RESTART IDENTITY CASCADE"
+            )
         )
 
 
@@ -150,6 +164,25 @@ def auth_headers(registered: dict[str, object]) -> dict[str, str]:
 
 
 @pytest.fixture
+def seeded_assets(db: Session) -> list[Asset]:
+    """The tracked universe, seeded once for a test that needs assets to exist."""
+    from app.services.ingestion.seed import seed_assets
+
+    seed_assets(db)
+    return list(db.scalars(select(Asset).order_by(Asset.symbol)))
+
+
+@pytest.fixture
+def market_provider() -> SyntheticMarketDataProvider:
+    return SyntheticMarketDataProvider()
+
+
+@pytest.fixture
+def economic_provider() -> SyntheticEconomicDataProvider:
+    return SyntheticEconomicDataProvider()
+
+
+@pytest.fixture
 def valid_profile() -> dict[str, object]:
     return {
         "age": 34,
@@ -163,4 +196,4 @@ def valid_profile() -> dict[str, object]:
     }
 
 
-__all__ = ["User"]
+__all__ = ["Asset", "User"]

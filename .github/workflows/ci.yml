@@ -33,6 +33,10 @@ jobs:
       DATABASE_URL: postgresql+psycopg://wpx:wpx@localhost:5432/wpx_test
       JWT_SECRET: ci-jwt-secret-value-at-least-32-characters-long
       PROFILE_ENCRYPTION_KEY: ci-profile-encryption-key-at-least-32-chars
+      # §7.3 — CI never calls a third-party API. A red build caused by Yahoo having
+      # a bad afternoon tells us nothing about the change under review.
+      MARKET_DATA_PROVIDER: synthetic
+      ECONOMIC_DATA_PROVIDER: synthetic
 
     defaults:
       run:
@@ -61,6 +65,34 @@ jobs:
 
       - name: Migrations apply cleanly from scratch
         run: alembic upgrade head
+
+      - name: Migrations round-trip
+        # Down-then-up, not just up: the M1 revision's downgrade left its enum types
+        # behind, and an upgrade-only check passes straight over that.
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: Schema matches the models
+        # An autogenerate diff that is not empty means the migrations and the models
+        # have drifted, which makes every future diff untrustworthy.
+        run: |
+          alembic revision --autogenerate -m drift-check --rev-id ci_drift_check
+          if grep -qE '^\s+op\.' alembic/versions/ci_drift_check_*.py; then
+            echo "::error::Models and migrations have drifted:"
+            cat alembic/versions/ci_drift_check_*.py
+            exit 1
+          fi
+          rm alembic/versions/ci_drift_check_*.py
+
+      - name: Ingestion jobs run end to end
+        # FR-04/FR-05 exercised as an operator runs them, against the synthetic
+        # providers. Catches wiring the unit tests cannot: CLI arguments, settings
+        # loading, and the exit codes the scheduler reads.
+        run: |
+          python -m app.jobs seed-assets
+          python -m app.jobs ingest-market --backfill-days 30
+          python -m app.jobs ingest-economic
 
       - name: Tests
         run: pytest -q

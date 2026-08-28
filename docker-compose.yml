@@ -26,6 +26,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       PROFILE_ENCRYPTION_KEY: ${PROFILE_ENCRYPTION_KEY:?PROFILE_ENCRYPTION_KEY is required}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      MARKET_DATA_PROVIDER: ${MARKET_DATA_PROVIDER:-synthetic}
+      ECONOMIC_DATA_PROVIDER: ${ECONOMIC_DATA_PROVIDER:-synthetic}
+      FRED_API_KEY: ${FRED_API_KEY:-}
       # The suite truncates tables, so it must never point at the app database.
       # conftest.py refuses any database whose name lacks "test", and creates
       # this one if it does not exist yet.
@@ -48,6 +51,36 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+
+  # Ingestion runs in its own container, not inside the API (Phase 2 plan,
+  # decision 2): an in-process scheduler would fire once per API replica the moment
+  # the API scales (§16.4), and would compete with request handling.
+  scheduler:
+    build: ./backend
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      DEBUG: ${DEBUG:-false}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-wpx}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-wealthpilotx}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      PROFILE_ENCRYPTION_KEY: ${PROFILE_ENCRYPTION_KEY:?PROFILE_ENCRYPTION_KEY is required}
+      MARKET_DATA_PROVIDER: ${MARKET_DATA_PROVIDER:-synthetic}
+      ECONOMIC_DATA_PROVIDER: ${ECONOMIC_DATA_PROVIDER:-synthetic}
+      FRED_API_KEY: ${FRED_API_KEY:-}
+    volumes:
+      - ./backend:/srv:z
+    depends_on:
+      # Waits for the API because the API applies the migrations; starting against
+      # a schema that does not exist yet would just crash-loop until it did.
+      api:
+        condition: service_healthy
+    # Seed the universe and, on a genuinely empty database, backfill history — so a
+    # fresh stack has data immediately instead of waiting for the first cron window.
+    # `bootstrap` skips the backfill when market data already exists, so a container
+    # restart does not re-hammer the provider.
+    command: >
+      sh -c "python -m app.jobs bootstrap &&
+             python -m app.jobs.scheduler"
+    restart: unless-stopped
 
   web:
     build: ./frontend

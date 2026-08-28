@@ -36,6 +36,31 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 100
     rate_limit_expensive_per_minute: int = 10
 
+    # --- Data platform (M2) ---
+    # Which §7.3 implementation runs. "synthetic" needs no network and no keys, so
+    # it is the default: a fresh clone gets a working stack before anyone has
+    # signed up for an API key.
+    market_data_provider: Literal["yahoo", "synthetic"] = "synthetic"
+    economic_data_provider: Literal["fred", "synthetic"] = "synthetic"
+
+    # Optional by design — required only when economic_data_provider is "fred",
+    # and the provider raises a configuration error rather than the app refusing
+    # to boot, because the API serves stored data perfectly well without it.
+    fred_api_key: str | None = None
+
+    # How far back a --backfill run reaches when no explicit window is given.
+    ingestion_backfill_days: int = 730
+
+    # FR-04: a tracked symbol should have a row for the latest trading day. Past
+    # this many hours without one, /health reports the data as stale. 48 rather
+    # than 24 so a normal weekend does not raise an alert every Sunday.
+    market_data_stale_after_hours: int = 48
+
+    # FR-06: absolute daily log return beyond this is counted as an outlier in the
+    # quality report. It is a reporting threshold, not a filter — see decision 4 of
+    # the Phase 2 plan; rows are flagged and kept, never dropped.
+    outlier_log_return_threshold: float = 0.25
+
     # Kept as a raw string: pydantic-settings JSON-decodes list-typed fields from
     # the environment before any validator runs, so a comma-separated value would
     # fail to parse. `cors_origins` below is the parsed form callers use.
