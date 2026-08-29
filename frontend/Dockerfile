@@ -2,8 +2,11 @@ FROM node:22-slim
 
 WORKDIR /srv
 
-COPY package.json ./
-RUN npm install
+# The lockfile, and `npm ci` rather than `npm install`: the image resolved its own
+# dependency tree from package.json alone, so the container could run versions no
+# CI job had ever tested.
+COPY package.json package-lock.json ./
+RUN npm ci
 
 COPY . .
 
