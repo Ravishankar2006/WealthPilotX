@@ -117,3 +117,38 @@ export const PREDICTION = {
   unavailable: [],
   disclaimer: DISCLAIMER,
 };
+
+export const BACKTEST = {
+  portfolio_id: "pf1",
+  start: "2025-09-12",
+  end: "2026-08-28",
+  months_requested: 12,
+  training_end: "2025-09-11",
+  rebalances: 11,
+  portfolio: {
+    total_return: 0.1597,
+    annualised_return: 0.161,
+    volatility: 0.0683,
+    sharpe_ratio: 2.0652,
+    max_drawdown: -0.0367,
+  },
+  benchmark: {
+    total_return: 0.1321,
+    annualised_return: 0.1332,
+    volatility: 0.1847,
+    sharpe_ratio: 0.613,
+    max_drawdown: -0.1347,
+  },
+  benchmark_symbol: "SPY",
+  transaction_cost_bps: 10.0,
+  total_costs: 0.001359,
+  equity_curve: [
+    { date: "2025-09-15", value: 1.0047 },
+    { date: "2026-08-28", value: 1.1597 },
+  ],
+  benchmark_curve: [
+    { date: "2025-09-15", value: 0.9981 },
+    { date: "2026-08-28", value: 1.1321 },
+  ],
+  disclaimer: DISCLAIMER,
+};

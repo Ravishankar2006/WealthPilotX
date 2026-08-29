@@ -255,3 +255,40 @@ export interface FairnessReport {
   dimensions: FairnessDimension[];
   disclaimer: string;
 }
+
+/** §19 — one point on a growth-of-1 curve. */
+export interface EquityPoint {
+  date: string;
+  value: number;
+}
+
+export interface BacktestMetrics {
+  total_return: number;
+  annualised_return: number;
+  volatility: number;
+  sharpe_ratio: number;
+  max_drawdown: number;
+}
+
+export interface Backtest {
+  portfolio_id: string;
+  /** The window actually used, which is not always the one requested — see below. */
+  start: string;
+  end: string;
+  months_requested: number;
+  /**
+   * The last date the production predictor saw. §19 requires the backtest period to
+   * be separate from the training period, so the start is pushed past this when the
+   * two would overlap. Null when no model is promoted.
+   */
+  training_end: string | null;
+  rebalances: number;
+  portfolio: BacktestMetrics;
+  benchmark: BacktestMetrics;
+  benchmark_symbol: string;
+  transaction_cost_bps: number;
+  total_costs: number;
+  equity_curve: EquityPoint[];
+  benchmark_curve: EquityPoint[];
+  disclaimer: string;
+}

@@ -19,7 +19,7 @@ this milestone.
 | Input validation on every endpoint | Met | Pydantic on every request body and query parameter; a validation failure returns §13.1's envelope with field detail, never a stack trace. |
 | Users read/modify only their own resources | Met | `tests/test_access_control.py` asserts it route by route, from the OpenAPI schema, so a new endpoint is covered the day it is added. Another user's resource is a **404, not a 403** — a 403 confirms existence. |
 | Environment-based secrets | Met | `JWT_SECRET` and `PROFILE_ENCRYPTION_KEY` are required settings with no defaults; the app refuses to start without them. |
-| HTTPS in production | Partly — see Finding 2 | HSTS is now sent outside development. Terminating TLS is a deployment concern this repo does not configure. |
+| HTTPS in production | Partly — see Finding 2 | HSTS is sent in `staging` and `production`. Terminating TLS is a deployment concern this repo does not configure. |
 | Rate limiting per §13.1 | Met | 100/min default, 10/min on `/risk/analyze` and `/portfolio/generate`, keyed **per user** on authenticated routes (the M3 fix: it was silently per-IP). |
 | Dependency scanning in CI | Met, and now blocking — see §3 | `pip-audit` and `npm audit`. |
 
@@ -92,9 +92,17 @@ The API sent none of `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Poli
 
 Two decisions inside the fix are worth recording:
 
-- **HSTS is conditional.** Sent from a development server on `localhost`, `Strict-Transport-Security`
-  pins *localhost* to HTTPS for a year — for every project on that machine, persistently. It is
-  therefore suppressed in `development` and `test`.
+- **HSTS is conditional, on an allow-list.** Sent from a local server on `localhost`,
+  `Strict-Transport-Security` pins *localhost* to HTTPS for a year — for every project on that
+  machine, persistently. It is therefore sent only in `staging` and `production`.
+
+  The first version got this wrong in a way worth recording: it excluded
+  `{"development", "test"}`, and this repo's environments are `local | test | staging | production`.
+  `development` is not one of them, so the guard matched nothing and the development stack shipped
+  HSTS anyway. Found by curling the running API — the test asserted against the same invented name
+  and passed. A deny-list of environment names fails open on the name you did not think of; an
+  allow-list fails closed. A test now covers every name the settings `Literal` permits, and another
+  pins the two lists together.
 - **The middleware is registered outermost**, so headers are present on error responses too. The
   responses a client did not expect are the ones most likely to be probed, and they were the ones
   most likely to be missed. `tests/test_observability.py` asserts it on a 401.
@@ -151,6 +159,26 @@ report must decrypt every profile in the API process to band it. Plaintext there
 memory for the duration of that request. `fairness_service._band_income` converts and discards
 immediately, and no raw value is returned, logged, or retained — but the exposure is real and is the
 documented cost of the M1 decision to encrypt in the application rather than rely on the host.
+
+---
+
+## 4a. Legal documents (added after the closing audit)
+
+§17.1 requires a Terms of Service and Privacy Policy accepted at registration. The consent checkbox
+existed and was enforced; **the documents did not**. That is now closed — both are public routes,
+linked from the checkbox and the persistent footer.
+
+Two properties matter for this review:
+
+- **They are reachable without an account.** A document behind the auth guard cannot be read by the
+  person being asked to accept it.
+- **They state their own status.** Both say they were written by the project and have not been
+  reviewed by a lawyer. §17.2 requires that review before any public launch; claiming otherwise
+  would be the most misleading text in the product.
+
+The Privacy Policy describes only commitments the code actually implements — application-layer
+encryption of income and savings, log redaction, immediate erasure, and the n ≥ 20 fairness
+suppression threshold — so it can be checked against the system rather than taken on trust.
 
 ---
 

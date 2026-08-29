@@ -155,6 +155,98 @@ jobs:
         # §20's coverage pass, frontend half. Thresholds live in vite.config.ts.
         run: npm run test:coverage
 
+  e2e:
+    name: End-to-end — the full journey
+    runs-on: ubuntu-latest
+    # §20's end-to-end layer. The PRD says "against a staging environment"; there is
+    # none (§17.2 keeps this project unlaunched), so it runs against the Compose
+    # stack — the same images this workflow builds. Stated rather than implied.
+    #
+    # Nothing is stubbed. Every other suite tests one side of a boundary against a
+    # mock of the other, which is what let the M6 /fairness/report 500 through three
+    # green test layers.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write the environment the stack needs
+        run: |
+          cat > .env <<'ENVFILE'
+          ENVIRONMENT=local
+          POSTGRES_USER=wpx
+          POSTGRES_PASSWORD=ci-postgres-password
+          POSTGRES_DB=wealthpilotx
+          POSTGRES_PORT=5432
+          API_PORT=8000
+          WEB_PORT=5173
+          JWT_SECRET=ci-jwt-secret-value-at-least-32-characters-long
+          PROFILE_ENCRYPTION_KEY=ci-profile-encryption-key-at-least-32-chars
+          MARKET_DATA_PROVIDER=synthetic
+          ECONOMIC_DATA_PROVIDER=synthetic
+          VITE_API_BASE_URL=http://localhost:8000/api/v1
+          CORS_ORIGINS=http://localhost:5173
+          RISK_TRAINING_POPULATION=2000
+          ENVFILE
+
+      - name: Start the stack
+        run: docker compose up -d --build db api web
+
+      - name: Wait for the API to be ready
+        # Polling /health rather than sleeping: migrations run on start, and a fixed
+        # sleep is either too short on a cold runner or wasted on a warm one.
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/api/v1/health >/dev/null; then
+              echo "api ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::API never became ready"; docker compose logs api; exit 1
+
+      - name: Seed data and promote models
+        # The journey needs a risk model to classify with and prices to optimise
+        # over. Without this the run would fail on a 503 that says nothing about the
+        # change under review.
+        run: |
+          docker compose exec -T api python -m app.jobs seed-assets
+          docker compose exec -T api python -m app.jobs ingest-market --backfill-days 1100
+          docker compose exec -T api python -m app.jobs ingest-economic
+          docker compose exec -T api python -m app.jobs train-risk
+          docker compose exec -T api python -m app.jobs promote risk_classifier v1
+          docker compose exec -T api python -m app.jobs train-prediction --holdout-days 200
+          docker compose exec -T api python -m app.jobs promote market_predictor v1 --force
+          docker compose exec -T api python -m app.jobs predict
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci || npm install
+
+      - name: Install the browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the journey
+        working-directory: frontend
+        env:
+          E2E_BASE_URL: http://localhost:5173
+        run: npm run e2e
+
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose logs --tail 200
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-trace
+          path: frontend/test-results/
+          retention-days: 7
+
   images:
     name: Docker images build
     runs-on: ubuntu-latest

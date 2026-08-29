@@ -15,6 +15,7 @@ import { api } from "./client";
 import { ApiError } from "./types";
 import type {
   Asset,
+  Backtest,
   Explanation,
   FairnessReport,
   MarketHistory,
@@ -85,4 +86,12 @@ export const portfolio = {
   },
   explanation: (recommendationId: string) =>
     api.get<Explanation>(`/recommendation/${encodeURIComponent(recommendationId)}/explanation`),
+
+  /**
+   * §19. A 404 (no portfolio yet) becomes null like the others; a 503 is *not*
+   * swallowed — it means there is not enough out-of-sample history to measure, and
+   * the reason is worth showing rather than rendering as an empty panel.
+   */
+  backtest: (months = 12) =>
+    notFoundAsNull(api.get<Backtest>(`/portfolio/backtest?months=${months}`)),
 };

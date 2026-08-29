@@ -68,6 +68,11 @@ class BacktestResult:
     transaction_cost_bps: float
     total_costs: float
     equity_curve: pd.Series = field(repr=False, default_factory=pd.Series)
+    # The benchmark's growth-of-1 over the same window. §19 requires a benchmark
+    # *comparison*, and comparing two headline numbers hides when the portfolio led
+    # for most of the period and gave it back at the end — which is the shape a
+    # reader most needs to see.
+    benchmark_curve: pd.Series = field(repr=False, default_factory=pd.Series)
 
 
 class BacktestError(Exception):
@@ -181,4 +186,5 @@ def run(
         transaction_cost_bps=transaction_cost_bps,
         total_costs=round(total_costs, 6),
         equity_curve=(1.0 + series).cumprod(),
+        benchmark_curve=(1.0 + benchmark_returns).cumprod(),
     )

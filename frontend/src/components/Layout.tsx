@@ -59,10 +59,19 @@ export function AppLayout({ children }: { children: ReactNode }) {
   );
 }
 
-export function PublicLayout({ children }: { children: ReactNode }) {
+export function PublicLayout({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   return (
     <div className="flex min-h-screen flex-col">
-      <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
+      {/* `wide` for the legal pages: a form reads best in a narrow column, prose
+          does not, and vertically centring a two-screen document puts its first
+          line below the fold. */}
+      <main
+        className={
+          wide
+            ? "mx-auto w-full max-w-2xl flex-1 px-6 py-12"
+            : "mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12"
+        }
+      >
         {children}
       </main>
       <PersistentDisclaimer />

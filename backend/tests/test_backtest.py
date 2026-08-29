@@ -5,6 +5,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 import pytest
+from fastapi.testclient import TestClient
 
 from app.ml import backtest
 
@@ -159,3 +160,47 @@ class TestRun:
         )
         assert len(result.equity_curve) > 200
         assert result.equity_curve.index[0].date() >= date(2025, 1, 2)
+
+
+class TestBacktestEndpoint:
+    """§19 reaching a user, which until M6 it did not — the metrics were computed
+    and served only to a terminal, leaving §23's "the user can view portfolio
+    performance and/or backtest results" unmet."""
+
+    def test_it_requires_authentication(self, client: TestClient) -> None:
+        assert client.get("/api/v1/portfolio/backtest").status_code == 401
+
+    def test_no_portfolio_is_a_404(self, client: TestClient, auth_headers: dict[str, str]) -> None:
+        response = client.get("/api/v1/portfolio/backtest", headers=auth_headers)
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "no_portfolio"
+
+    def test_the_literal_path_is_not_swallowed_by_history(
+        self, client: TestClient, auth_headers: dict[str, str]
+    ) -> None:
+        """`/backtest` is declared before `/history` in the same router; a future
+        `/{portfolio_id}` would otherwise match it as an id."""
+        response = client.get("/api/v1/portfolio/backtest", headers=auth_headers)
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "no_portfolio"
+
+    def test_the_equity_curve_endpoint_matches_the_headline_return(self) -> None:
+        """The property `sample_equity_curve` exists to preserve. A thinned curve
+        whose last point disagreed with the reported total return would be worse
+        than no curve — a reader would trust the picture over the number."""
+        from app.services.backtest_service import sample_equity_curve
+
+        index = pd.date_range("2025-01-01", periods=900, freq="D")
+        curve = pd.Series(np.linspace(1.0, 1.42, 900), index=index)
+
+        sampled = sample_equity_curve(curve, limit=100)
+
+        assert len(sampled) <= 101
+        assert sampled[0]["date"] == "2025-01-01"
+        # The final point is exact, not the last stride hit.
+        assert sampled[-1]["value"] == pytest.approx(float(curve.iloc[-1]), abs=1e-6)
+
+    def test_an_empty_curve_is_an_empty_list_not_an_error(self) -> None:
+        from app.services.backtest_service import sample_equity_curve
+
+        assert sample_equity_curve(pd.Series(dtype=float)) == []

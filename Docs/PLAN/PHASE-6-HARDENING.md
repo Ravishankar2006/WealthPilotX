@@ -1,7 +1,8 @@
 # Phase 6 — Advanced AI & Hardening (PRD Milestone M6)
 
 **Estimated duration:** 2–3 weeks solo/part-time (PRD §22)
-**Status:** Complete — see §7.
+**Status:** Complete — see §7. The three PRD gaps found in the closing audit are also closed; see
+§7's "Closing the last three PRD gaps".
 **Exit condition:** Every model output the product serves can be traced to the inputs that produced
 it; the system reports its own drift, its own request metrics and its own group-level disparities;
 the dependency and access-control surface has been reviewed and written down; and the test suite has
@@ -380,6 +381,61 @@ the page is reloaded; `save_to_disk` triggers the same stall. This is an extensi
 not an application fault — page JavaScript stayed responsive throughout, and a fresh tab on the same
 URL rendered normally. The scripted contrast and glyph audit above is what replaced it, and is a
 stronger check than reading a greyscale JPEG: it produces numbers rather than an impression.
+
+### Closing the last three PRD gaps
+
+Added after the phase was first closed, when the project was audited against §23's definition of
+done and three named deliverables turned out never to have been built.
+
+**1. The backtest reaches a user (§23 item 9, FR-12).** §19's metrics existed from M4 but only
+through `python -m app.jobs backtest` — computed correctly and visible to nobody. §13.2 specifies no
+backtest endpoint, so §23 asked for something the API section never gave a surface for; that is now
+`GET /api/v1/portfolio/backtest`, in the 10 req/min expensive bucket because it simulates a year of
+daily returns for every holding.
+
+The computation moved to `services/backtest_service` so the CLI and the endpoint share one path — a
+backtest that answered differently depending on who asked would be worse than none. The Portfolio
+page renders all five metrics beside the benchmark, plus a growth-of-1 chart where the portfolio is
+solid and the benchmark dotted, so the two series are distinguishable without colour.
+`sample_equity_curve` keeps the final point exact rather than whatever the stride lands on: verified
+end to end, the curve's last value reconciles with the reported total return to four decimal places.
+
+**2. End-to-end tests (§20).** Playwright, three specs, run against the Compose stack. The PRD says
+"against a staging environment"; there is none, and §17.2 keeps this project unlaunched, so the
+config says so rather than letting someone discover that "staging" meant localhost. Nothing is
+stubbed — that is the entire point of the layer.
+
+**3. Terms of Service and Privacy Policy (§17.1).** The registration checkbox already read "I accept
+the Terms of Service and Privacy Policy" and gated the submit button, and the server already
+required and stored the flag. **Neither document existed.** Users were consenting to nothing, which
+is worse than no checkbox, because it creates a record of consent to terms that were never written.
+Both now exist as public unguarded routes, linked from the checkbox and from the persistent footer,
+and both say plainly that they were written by the project and not reviewed by a lawyer — §17.2
+requires that review before any public launch and it has not happened.
+
+### Bugs the three additions caught
+
+**The E2E suite failed on its first run because `.invalid` is a reserved TLD** that the API's email
+validation rejects. That is FR-01's field-level 422 behaving exactly as specified, surfaced through
+the real form — and it is precisely the class of thing no unit test would find, since every unit
+fixture already used `example.com`.
+
+**One of my own E2E assertions was vacuous.** The backtest check accepted `[role="note"]` anywhere
+on the page as the "explained why not" branch — and the inline §17.1 disclaimer on that page carries
+`role="note"`, so it matched unconditionally and could never fail. Now scoped to the backtest
+section.
+
+**Two unnamed tables on one page.** Adding the backtest table made `findByRole("table")` ambiguous
+and broke an existing test. The fix was not to disambiguate in the test but to give both tables an
+`aria-label` — they were equally ambiguous to a screen reader, and the test was reporting a real
+accessibility gap.
+
+**Volatility rendered as `+6.8%`.** `signedPercent` on a magnitude implies a gain of volatility.
+Returns and drawdown are signed; volatility is not, and a Sharpe ratio is not a percentage at all.
+
+**The frontend coverage floor did its job.** The new pages dropped statements to 74.27%, under the
+75% floor, and CI would have failed. The response was to write tests for the new code, not to lower
+the number — coverage is now 78.31%, above where it stood before the additions.
 
 ### Notes and honest limitations
 

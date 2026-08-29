@@ -107,9 +107,29 @@ export default function Register() {
             onChange={(e) => setAcceptedTerms(e.target.checked)}
           />
           <span>
-            I accept the Terms of Service and Privacy Policy, and I understand that
-            WealthPilotX is an educational tool that does not provide licensed financial
-            advice.
+            I accept the{" "}
+            {/* Real links, opening in a new tab so a half-filled form is not lost.
+                Until M6 these were bare words naming documents that did not exist,
+                which made the checkbox a record of consent to nothing. */}
+            <a
+              href="/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent underline"
+            >
+              Terms of Service
+            </a>{" "}
+            and{" "}
+            <a
+              href="/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent underline"
+            >
+              Privacy Policy
+            </a>
+            , and I understand that WealthPilotX is an educational tool that does not provide
+            licensed financial advice.
           </span>
         </label>
 

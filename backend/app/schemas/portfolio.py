@@ -74,9 +74,31 @@ class BacktestMetrics(BaseModel):
     max_drawdown: float
 
 
+class EquityPoint(BaseModel):
+    """One point on the growth-of-1 curve."""
+
+    date: str
+    value: float
+
+
 class BacktestOut(BaseModel):
+    """§19's result for one stored portfolio.
+
+    `start` and `end` are the window that was actually used, which is not always the
+    one asked for: §19 requires the backtest period to be separate from the training
+    period, so the start is pushed past `training_end` when they would overlap.
+    Reporting the requested months alongside the real window is what stops a reader
+    assuming they got the twelve they asked for.
+    """
+
+    portfolio_id: uuid.UUID
     start: str
     end: str
+    months_requested: int
+    # The last date the production predictor saw. Null when no model is promoted —
+    # in which case there is no overlap to avoid and the window is the plain one.
+    training_end: str | None = None
+
     rebalances: int
     portfolio: BacktestMetrics
     benchmark: BacktestMetrics
@@ -84,4 +106,8 @@ class BacktestOut(BaseModel):
     # §19 requires the cost assumption to be reported, not merely applied.
     transaction_cost_bps: float
     total_costs: float
+
+    equity_curve: list[EquityPoint] = []
+    benchmark_curve: list[EquityPoint] = []
+
     disclaimer: str = MODEL_OUTPUT_DISCLAIMER

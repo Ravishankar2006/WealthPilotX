@@ -18,8 +18,15 @@ from app.models.asset import Asset
 from app.models.portfolio import Portfolio, PortfolioAsset
 from app.models.recommendation import Recommendation
 from app.schemas.common import ErrorResponse
-from app.schemas.portfolio import HoldingOut, PortfolioListResponse, PortfolioOut
-from app.services import portfolio_service, profile_service
+from app.schemas.portfolio import (
+    BacktestMetrics,
+    BacktestOut,
+    EquityPoint,
+    HoldingOut,
+    PortfolioListResponse,
+    PortfolioOut,
+)
+from app.services import backtest_service, portfolio_service, profile_service
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
@@ -123,6 +130,77 @@ def current(user: CurrentUser, db: DbSession) -> PortfolioOut:
             "No portfolio has been generated for this account yet.",
         )
     return _to_out(db, portfolio)
+
+
+@router.get(
+    "/backtest",
+    response_model=BacktestOut,
+    dependencies=[Depends(expensive)],
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+def backtest_current(
+    user: CurrentUser,
+    db: DbSession,
+    months: Annotated[int, Query(ge=3, le=60)] = backtest_service.DEFAULT_MONTHS,
+) -> BacktestOut:
+    """§19 — how the user's portfolio would have performed, against a benchmark.
+
+    In the expensive bucket alongside `/generate` and `/risk/analyze`. It is not a
+    model call, but it loads a year of prices for every holding and simulates them
+    day by day, which is the same order of work — and §13.1's 10 req/min ceiling is
+    about compute cost, not about which subsystem does the computing.
+
+    Declared before `/history` so the literal path is matched first; `/history` has
+    no path parameter to swallow it today, but a future `/{portfolio_id}` would.
+
+    Not cached. A backtest is deterministic given the portfolio, the window and the
+    stored prices, so caching it would be safe — but prices change daily, the
+    correct cache key is therefore "latest ingested date", and inventing that
+    machinery for a page nobody has loaded yet is the wrong order to do things in.
+    """
+    portfolio = backtest_service.latest_portfolio(db, user.id)
+    if portfolio is None:
+        raise AppError(
+            404,
+            "no_portfolio",
+            "No portfolio has been generated for this account yet, so there is "
+            "nothing to backtest.",
+        )
+
+    try:
+        run = backtest_service.run_for_portfolio(db, portfolio, months=months)
+    except backtest_service.BacktestUnavailableError as exc:
+        # 503, not 500 or 422: the request was fine and the system is fine — there
+        # is simply not enough out-of-sample price history to answer yet, and the
+        # message says what an operator would have to do about it.
+        raise AppError(503, "backtest_unavailable", str(exc)) from exc
+
+    result = run.result
+    return BacktestOut(
+        portfolio_id=portfolio.id,
+        start=result.start.isoformat(),
+        end=result.end.isoformat(),
+        months_requested=run.months_requested,
+        training_end=run.training_end.isoformat() if run.training_end else None,
+        rebalances=result.rebalances,
+        portfolio=BacktestMetrics(**result.portfolio.as_dict()),
+        benchmark=BacktestMetrics(**result.benchmark.as_dict()),
+        benchmark_symbol=result.benchmark_symbol,
+        transaction_cost_bps=result.transaction_cost_bps,
+        total_costs=result.total_costs,
+        equity_curve=[
+            EquityPoint(**point)
+            for point in backtest_service.sample_equity_curve(result.equity_curve)
+        ],
+        benchmark_curve=[
+            EquityPoint(**point)
+            for point in backtest_service.sample_equity_curve(result.benchmark_curve)
+        ],
+    )
 
 
 @router.get(

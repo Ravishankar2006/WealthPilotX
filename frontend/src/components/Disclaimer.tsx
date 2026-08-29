@@ -24,7 +24,16 @@ export function PersistentDisclaimer() {
     >
       <p className="mx-auto max-w-5xl text-[13px] leading-relaxed text-ink-muted">
         <span className="font-medium text-ink-soft">Important. </span>
-        {PERSISTENT_TEXT}
+        {PERSISTENT_TEXT}{" "}
+        {/* §17.1's documents, reachable from every page rather than only from the
+            registration form a user passed through once. */}
+        <a href="/terms" className="underline hover:text-ink-soft">
+          Terms
+        </a>{" "}
+        ·{" "}
+        <a href="/privacy" className="underline hover:text-ink-soft">
+          Privacy
+        </a>
       </p>
     </footer>
   );

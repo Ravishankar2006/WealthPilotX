@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useRef, type ReactElement } from "react";
 import { useAuth } from "./context/AuthContext";
 import Landing from "./pages/Landing";
+import { PrivacyPage, TermsPage } from "./pages/Legal";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Onboarding from "./pages/Onboarding";
@@ -48,6 +49,10 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      {/* Public and unguarded: someone deciding whether to register must be able to
+          read the terms they are being asked to accept. */}
+      <Route path="/terms" element={<TermsPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
       <Route
         path="/login"
         element={

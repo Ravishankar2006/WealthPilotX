@@ -11,7 +11,6 @@ built is how an unreviewed model reaches users.
 
 from datetime import UTC, datetime
 
-import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
@@ -19,7 +18,6 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.logging import get_logger, safe_extra
 from app.ml import backtest, monitoring, registry
-from app.ml.features.market import load_prices
 from app.ml.prediction import dataset as prediction_dataset
 from app.ml.prediction import model as prediction_model
 from app.ml.risk import model as risk_model
@@ -28,7 +26,7 @@ from app.models.enums import DriftVerdict
 from app.models.model_monitoring import ModelMonitoring
 from app.models.model_record import PREDICTION_MODEL, RISK_MODEL, ModelRecord
 from app.models.prediction import Prediction
-from app.services import prediction_service
+from app.services import backtest_service, prediction_service
 
 logger = get_logger("app.jobs.ml")
 
@@ -189,17 +187,17 @@ def backtest_portfolio(
     db: Session,
     *,
     user_email: str | None = None,
-    months: int = 12,
+    months: int = backtest_service.DEFAULT_MONTHS,
     cost_bps: float = backtest.DEFAULT_TRANSACTION_COST_BPS,
 ) -> backtest.BacktestResult | None:
     """§19 — backtest the most recent portfolio against a benchmark.
 
-    Uses a stored portfolio rather than generating a fresh one, so the thing measured
-    is what a user was actually shown.
+    The computation lives in `services/backtest_service` because the API serves it
+    too, and a backtest that gave different answers depending on whether the CLI or
+    the endpoint asked would be worse than no backtest. This wrapper only picks the
+    portfolio and prints the result.
     """
-    from datetime import timedelta
-
-    from app.models.portfolio import Portfolio, PortfolioAsset
+    from app.models.portfolio import Portfolio
     from app.models.user import User
 
     statement = select(Portfolio).order_by(Portfolio.created_at.desc()).limit(1)
@@ -213,64 +211,14 @@ def backtest_portfolio(
         print("backtest: no portfolio found — generate one first")  # noqa: T201
         return None
 
-    weights = {
-        symbol: float(weight)
-        for weight, symbol in db.execute(
-            select(PortfolioAsset.weight, Asset.symbol)
-            .join(Asset, Asset.id == PortfolioAsset.asset_id)
-            .where(PortfolioAsset.portfolio_id == portfolio.id)
-        ).all()
-    }
-
-    frames = {}
-    for symbol in [*weights, backtest.DEFAULT_BENCHMARK]:
-        prices = load_prices(db, symbol)
-        if not prices.empty:
-            frames[symbol] = prices["adj_close"]
-    if backtest.DEFAULT_BENCHMARK not in frames:
-        print(f"backtest: benchmark {backtest.DEFAULT_BENCHMARK} has no price history")  # noqa: T201
-        return None
-
-    prices = pd.DataFrame(frames).sort_index()
-    end = prices.index[-1].date()
-
-    # The training window of the production predictor, so §19's overlap check has
-    # something real to test against.
-    record = registry.production_record(db, PREDICTION_MODEL)
-    training_end = record.training_end if record else None
-
-    start = end - timedelta(days=int(months * 30.44))
-    if training_end is not None and start <= training_end:
-        # §19 wants the backtest to *follow* the training period, so that is where
-        # it starts — rather than refusing a window the operator had no way to know
-        # was wrong. The window actually used is printed with the results.
-        start = training_end + timedelta(days=1)
-
-    if (end - start).days < 60:
-        print(  # noqa: T201
-            f"backtest: only {(end - start).days} days remain after the model's training "
-            f"window (through {training_end}). Retrain with a reserved period — "
-            "`python -m app.jobs train-prediction --holdout-days 180` — so there is "
-            "genuine out-of-sample data to measure against (§19)."
-        )
-        return None
-
     try:
-        result = backtest.run(
-            prices,
-            weights,
-            benchmark=prices[backtest.DEFAULT_BENCHMARK],
-            start=start,
-            end=end,
-            training_end=training_end,
-            transaction_cost_bps=cost_bps,
-        )
-    except backtest.BacktestError as exc:
+        run = backtest_service.run_for_portfolio(db, portfolio, months=months, cost_bps=cost_bps)
+    except backtest_service.BacktestUnavailableError as exc:
         print(f"backtest: {exc}")  # noqa: T201
         return None
 
-    _print_backtest(result)
-    return result
+    _print_backtest(run.result)
+    return run.result
 
 
 def _print_backtest(result: backtest.BacktestResult) -> None:

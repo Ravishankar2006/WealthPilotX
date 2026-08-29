@@ -15,6 +15,10 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    // Vitest globs `**/*.test.*` and `**/*.spec.*` by default, which would collect
+    // the Playwright specs and fail on an import it cannot resolve. The two runners
+    // own separate directories.
+    exclude: ["node_modules/**", "dist/**", "e2e/**"],
     setupFiles: ["./src/test/setup.ts"],
     css: false,
     coverage: {

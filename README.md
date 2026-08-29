@@ -10,7 +10,7 @@ past performance do not guarantee future results.
 
 ---
 
-## Current status — Milestone 6 (Advanced AI & Hardening)
+## Current status — all six milestones complete
 
 | Milestone | Scope | Status |
 |---|---|---|
@@ -19,7 +19,7 @@ past performance do not guarantee future results.
 | M3 — ML | Feature engineering, risk model, market prediction, model registry | Complete |
 | M4 — Recommendation | Asset scoring, recommendation engine, optimisation, backtesting | Complete |
 | M5 — UI | Dashboard, charts, risk and portfolio visualisation | Complete |
-| **M6 — Advanced AI & Hardening** | SHAP explainability, fairness report, drift monitoring, metrics, security review | **In progress** |
+| M6 — Advanced AI & Hardening | SHAP explainability, fairness report, drift monitoring, metrics, security review | Complete |
 
 Phase plans: [`PHASE-1-FOUNDATION.md`](Docs/PLAN/PHASE-1-FOUNDATION.md) ·
 [`PHASE-2-DATA-PLATFORM.md`](Docs/PLAN/PHASE-2-DATA-PLATFORM.md) ·
@@ -221,6 +221,23 @@ identifiable people.
 Age and income feed the risk rubric by design, so a difference across those bands is expected and
 the page says so. Reading a disparity there as evidence of a fault would manufacture a finding out of
 the product working as documented.
+
+## Testing
+
+| Layer | What it covers | Command |
+|---|---|---|
+| Backend unit, model and integration | Business logic, feature engineering, model shape and range checks, API endpoints against a real PostgreSQL | `docker compose exec api pytest` |
+| Frontend component | Rendering and the key flows against mocked responses | `docker compose exec web npm test` |
+| End-to-end | Register → profile → risk → recommendation → dashboard, against the running stack with nothing stubbed | `cd frontend && npm run e2e` |
+
+Coverage floors are enforced in CI — 89% backend, 75% frontend statements. They exist to stop
+coverage falling, not to be chased: the uncovered remainder is mostly the Yahoo and FRED providers,
+which CI is forbidden to call (§7.3).
+
+The end-to-end layer needs the stack up and a promoted risk model. `npm run e2e:install` fetches the
+browser the first time. It is the only suite that exercises the browser, the API, the database and
+the models together — every other test stubs one side of a boundary, which is how a 500 on
+`/fairness/report` once passed three green test layers at the same time.
 
 ## What is deliberately not here
 
