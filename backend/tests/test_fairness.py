@@ -225,6 +225,47 @@ class TestEndpoint:
         # The band label is what a reader gets instead.
         assert "50k-100k" in raw
 
+    def test_a_populated_instance_serialises_its_disparity(
+        self, client: TestClient, auth_headers: dict[str, str], db: Session
+    ) -> None:
+        """The gap the other endpoint tests left.
+
+        Every previous test here reached the endpoint on an *empty* instance, where
+        `disparity` is None and the serialisation branch is never entered. The first
+        version of that branch called `vars()` on a slots dataclass — which has no
+        `__dict__` — and raised TypeError. It took two groups of 20+ users to reach
+        it, so the service tests (which build `Disparity` directly) and the endpoint
+        tests (which never populated one) both passed while the page 500'd.
+        """
+        _populate(db, 22, age=25, category=RiskCategory.HIGH)
+        _populate(db, 22, age=65, category=RiskCategory.LOW)
+
+        response = client.get("/api/v1/fairness/report", headers=auth_headers)
+        assert response.status_code == 200, response.text
+
+        age = next(d for d in response.json()["dimensions"] if d["dimension"] == "age_band")
+        assert age["disparity"] is not None
+        assert age["disparity"]["highest_group"] == "18-29"
+        assert age["disparity"]["flagged"] is True
+        assert age["note"] is None
+
+    def test_a_reportable_group_serialises_its_metrics(
+        self, client: TestClient, auth_headers: dict[str, str], db: Session
+    ) -> None:
+        _populate(db, 22, age=35, category=RiskCategory.MEDIUM)
+
+        body = client.get("/api/v1/fairness/report", headers=auth_headers).json()
+        age = next(d for d in body["dimensions"] if d["dimension"] == "age_band")
+        group = next(g for g in age["groups"] if g["group"] == "30-44")
+
+        assert group["suppressed"] is False
+        assert group["risk_distribution"] == {"LOW": 0.0, "MEDIUM": 1.0, "HIGH": 0.0}
+        assert group["mean_risk_score"] == 0.5
+        # Nobody in the group has generated a portfolio, so this is genuinely
+        # unmeasured rather than zero.
+        assert group["mean_equity_weight"] is None
+        assert group["portfolio_rate"] == 0.0
+
     def test_it_carries_the_section_17_1_disclaimer(
         self, client: TestClient, auth_headers: dict[str, str]
     ) -> None:

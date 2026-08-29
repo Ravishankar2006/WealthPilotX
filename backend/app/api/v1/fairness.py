@@ -8,6 +8,8 @@ the response, not after. The limitation is recorded in
 `Docs/PLAN/PHASE-6-HARDENING.md` §2.3 rather than left implicit.
 """
 
+from dataclasses import asdict
+
 from fastapi import APIRouter
 
 from app.api.deps import CurrentUser, DbSession
@@ -51,8 +53,13 @@ def read_report(user: CurrentUser, db: DbSession) -> FairnessReportOut:
                     )
                     for group in dimension.groups
                 ],
+                # `asdict`, not `vars`: `Disparity` is a slots dataclass and so has
+                # no `__dict__` for `vars()` to read. The first version used `vars()`
+                # and raised TypeError — but only once a dimension actually had a
+                # disparity, which needs two groups of 20+, so every test that
+                # reached the endpoint went down the empty-instance branch instead.
                 disparity=(
-                    DisparityOut(**vars(dimension.disparity)) if dimension.disparity else None
+                    DisparityOut(**asdict(dimension.disparity)) if dimension.disparity else None
                 ),
                 note=dimension.note,
             )
