@@ -10,7 +10,7 @@ past performance do not guarantee future results.
 
 ---
 
-## Current status — Milestone 5 (UI)
+## Current status — Milestone 6 (Advanced AI & Hardening)
 
 | Milestone | Scope | Status |
 |---|---|---|
@@ -18,15 +18,18 @@ past performance do not guarantee future results.
 | M2 — Data Platform | Market and economic ingestion behind a provider interface | Complete |
 | M3 — ML | Feature engineering, risk model, market prediction, model registry | Complete |
 | M4 — Recommendation | Asset scoring, recommendation engine, optimisation, backtesting | Complete |
-| **M5 — UI** | Dashboard, charts, risk and portfolio visualisation | **In progress** |
-| M6 — Advanced AI | SHAP, fairness, monitoring, hardening | Not started |
+| M5 — UI | Dashboard, charts, risk and portfolio visualisation | Complete |
+| **M6 — Advanced AI & Hardening** | SHAP explainability, fairness report, drift monitoring, metrics, security review | **In progress** |
 
 Phase plans: [`PHASE-1-FOUNDATION.md`](Docs/PLAN/PHASE-1-FOUNDATION.md) ·
 [`PHASE-2-DATA-PLATFORM.md`](Docs/PLAN/PHASE-2-DATA-PLATFORM.md) ·
 [`PHASE-3-ML.md`](Docs/PLAN/PHASE-3-ML.md) ·
 [`PHASE-4-RECOMMENDATION.md`](Docs/PLAN/PHASE-4-RECOMMENDATION.md) ·
-[`PHASE-5-UI.md`](Docs/PLAN/PHASE-5-UI.md). Model cards are in
-[`Docs/MODELS/`](Docs/MODELS/). The product specification is `Docs/PRD/WealthPilotX_PRD_v2.docx`.
+[`PHASE-5-UI.md`](Docs/PLAN/PHASE-5-UI.md) ·
+[`PHASE-6-HARDENING.md`](Docs/PLAN/PHASE-6-HARDENING.md). Model cards are in
+[`Docs/MODELS/`](Docs/MODELS/), and the M6 security review is in
+[`SECURITY-REVIEW.md`](Docs/SECURITY-REVIEW.md). The product specification is
+`Docs/PRD/WealthPilotX_PRD_v2.docx`.
 
 ## Running it locally
 
@@ -188,6 +191,36 @@ which is checked as part of the QA pass.
 Where a number cannot be computed the interface says so and why, rather than rendering a dash that
 reads as zero. The portfolio page reports no portfolio value at all, because WealthPilotX does not
 hold funds or track holdings — inventing a balance would be the alternative.
+
+## How the models explain themselves
+
+Two model surfaces, two different kinds of explanation, and the difference is deliberate.
+
+**Market predictions are decomposed with TreeSHAP.** A gradient-boosted ensemble over twenty
+correlated features has no rule to read off, so the attribution has to come from the model. The
+contributions are exact — XGBoost implements TreeSHAP natively, so the `shap` package is not a
+dependency — and they sum to the prediction. Every explanation names the model version that made the
+prediction and rebuilds the features as of that prediction's own date, rather than explaining what
+today's model would say.
+
+**Risk scores are not decomposed with SHAP**, because they do not need to be. The score served to a
+user is a weighted sum of six documented factors, so each factor's contribution is already exact.
+Approximating a number that is already known would look more sophisticated and be less accurate.
+
+The system also watches itself. `python -m app.jobs monitor` runs nightly and records feature-drift
+(PSI) and rolling prediction error against thresholds that were written down before any measurement
+was taken. An alert logs and stores a row; it never retrains or promotes anything on its own.
+
+## A note on the fairness report
+
+`/fairness/report` reports risk and allocation outcomes across age, income, literacy and experience
+bands. Groups smaller than 20 users are withheld — server-side, before serialisation — and rendered
+as "not reported" rather than as zero, because a 0% rate on a group of three describes three
+identifiable people.
+
+Age and income feed the risk rubric by design, so a difference across those bands is expected and
+the page says so. Reading a disparity there as evidence of a fault would manufacture a finding out of
+the product working as documented.
 
 ## What is deliberately not here
 

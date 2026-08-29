@@ -6,6 +6,8 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
+import Explainability from "./pages/Explainability";
+import Fairness from "./pages/Fairness";
 import Market from "./pages/Market";
 import PortfolioPage from "./pages/Portfolio";
 import RecommendationDetail from "./pages/RecommendationDetail";
@@ -107,6 +109,22 @@ export function AppRoutes() {
         element={
           <RequireAuth>
             <RecommendationDetail />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/explainability"
+        element={
+          <RequireAuth>
+            <Explainability />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/fairness"
+        element={
+          <RequireAuth>
+            <Fairness />
           </RequireAuth>
         }
       />

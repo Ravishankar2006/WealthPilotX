@@ -33,8 +33,14 @@ logger = get_logger("app.jobs.scheduler")
 # Economic: 12:30, before the US morning. FRED publishes on its own schedule and
 # FR-05 only requires storage within 24 hours of publication, so a daily sweep with
 # a year-long lookback catches both new points and revisions.
+#
+# Monitoring: 01:00, an hour and a half after the market job, so the drift check
+# reads the day that has just landed rather than yesterday's. Daily rather than
+# weekly because §10.5 allows a drift alert to *trigger* retraining, and an alert a
+# week stale is one that arrives after the decision it should have informed.
 MARKET_CRON = CronTrigger(hour=23, minute=30, timezone="UTC")
 ECONOMIC_CRON = CronTrigger(hour=12, minute=30, timezone="UTC")
+MONITOR_CRON = CronTrigger(hour=1, minute=0, timezone="UTC")
 
 
 def _run(command: str) -> None:
@@ -73,6 +79,15 @@ def build_scheduler() -> BlockingScheduler:
         ECONOMIC_CRON,
         args=["ingest-economic"],
         id="ingest-economic",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
+    scheduler.add_job(
+        _run,
+        MONITOR_CRON,
+        args=["monitor"],
+        id="monitor",
         max_instances=1,
         coalesce=True,
         misfire_grace_time=3600,

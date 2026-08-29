@@ -17,5 +17,18 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     css: false,
+    coverage: {
+      provider: "v8",
+      // `src` only. Without this the report includes config files and the test
+      // helpers themselves, which inflates the number with code that is not the
+      // application.
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/test/**", "src/**/__tests__/**", "src/main.tsx", "src/vite-env.d.ts"],
+      reporter: ["text-summary"],
+      // A floor, not a target — the measured value rounded down. It exists to stop
+      // coverage falling, not to be chased upward: tests written to cover a line
+      // rather than a behaviour make the suite slower and the number prettier.
+      thresholds: { statements: 75, branches: 80, functions: 75, lines: 75 },
+    },
   },
 });

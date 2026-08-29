@@ -26,8 +26,12 @@ from app.schemas.market import (
     MarketHistoryResponse,
     PriceBarOut,
 )
-from app.schemas.risk import PredictionOut
-from app.services import market_service, prediction_service
+from app.schemas.risk import (
+    FeatureContributionOut,
+    PredictionExplanationOut,
+    PredictionOut,
+)
+from app.services import explanation_service, market_service, prediction_service
 
 router = APIRouter(prefix="/market", tags=["market"])
 
@@ -86,6 +90,65 @@ def read_prediction(symbol: str, user: CurrentUser, db: DbSession) -> Prediction
             "no_prediction",
             f"No prediction is available for {asset.symbol}: {exc.reason}.",
         ) from exc
+
+
+@router.get(
+    "/{symbol}/prediction/explanation",
+    response_model=PredictionExplanationOut,
+    responses={
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+)
+def read_prediction_explanation(
+    symbol: str, user: CurrentUser, db: DbSession
+) -> PredictionExplanationOut:
+    """FR-13's advanced explanation: what moved this prediction, and by how much.
+
+    Registered before `/{symbol}` because FastAPI matches routes in declaration
+    order and `/{symbol}` would otherwise swallow the longer path.
+
+    Note the parallel with `read_prediction`'s docstring: this one *does* run the
+    model, because a Shapley decomposition is not something the nightly job can
+    precompute for every asset and store cheaply. It stays inside §16.1's 5-second
+    prediction budget because it is one row through one booster — the expensive part
+    of a prediction is assembling the features, and that work is the same either way.
+    """
+    asset = market_service.get_asset(db, symbol)
+    try:
+        attribution = explanation_service.explain_prediction(db, asset)
+    except prediction_service.NoPredictionError as exc:
+        raise AppError(
+            404,
+            "no_prediction",
+            f"No prediction is available for {asset.symbol}: {exc.reason}.",
+        ) from exc
+
+    return PredictionExplanationOut(
+        symbol=attribution.symbol,
+        prediction_date=attribution.prediction_date,
+        horizon_days=attribution.horizon_days,
+        model_version=attribution.model_version,
+        predicted_return=attribution.predicted_return,
+        base_value=attribution.base_value,
+        contributions=[
+            FeatureContributionOut(
+                feature=item.feature,
+                label=item.label,
+                # NaN is not valid JSON. A macro feature can legitimately be missing
+                # for a given day, and the booster still attributes to it, so the
+                # contribution is real even when the value behind it is not known.
+                value=None if item.value != item.value else item.value,
+                contribution=item.contribution,
+                direction=item.direction,
+            )
+            for item in attribution.contributions
+        ],
+        contributions_shown=len(attribution.contributions),
+        contributions_total=attribution.contributions_total,
+        reproduced=attribution.reproduced,
+    )
 
 
 @router.get(

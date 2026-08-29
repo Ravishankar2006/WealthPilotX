@@ -16,6 +16,7 @@ from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import CorrelationIdMiddleware
 from app.core.ratelimit import RateLimit
+from app.core.security_headers import SecurityHeadersMiddleware
 
 API_PREFIX = "/api/v1"
 
@@ -49,6 +50,10 @@ def create_app() -> FastAPI:
     )
 
     app.add_middleware(CorrelationIdMiddleware)
+    # Added after the correlation middleware, so it runs *outside* it: Starlette
+    # applies middleware in reverse registration order, and the headers must be on
+    # the response whatever happened further in — including a handler that raised.
+    app.add_middleware(SecurityHeadersMiddleware, environment=settings.environment)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

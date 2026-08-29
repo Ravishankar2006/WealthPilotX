@@ -102,3 +102,32 @@ class TrendDirection(enum.StrEnum):
     UP = "UP"
     DOWN = "DOWN"
     FLAT = "FLAT"
+
+
+class DriftCheck(enum.StrEnum):
+    """What a monitoring row measured (§10.5).
+
+    Two checks, because §10.5 names two: "the distribution of key input features"
+    and "the rolling prediction error". They fail for different reasons and call for
+    different responses — drifted inputs suggest retraining on newer data, a risen
+    error suggests the relationship itself has changed — so they are recorded
+    separately rather than collapsed into one health score.
+    """
+
+    FEATURE_STABILITY = "FEATURE_STABILITY"
+    PREDICTION_ERROR = "PREDICTION_ERROR"
+
+
+class DriftVerdict(enum.StrEnum):
+    """The band a measurement fell into. Thresholds are declared in
+    `app/ml/monitoring.py` before any data is looked at, so that a calm-looking
+    result is not the product of a threshold chosen afterwards."""
+
+    STABLE = "STABLE"
+    WATCH = "WATCH"
+    ALERT = "ALERT"
+    # The check could not run — too few rows, no realised horizons yet, no
+    # reference window. Distinct from STABLE on purpose: "nothing measured" and
+    # "measured and fine" are the two states a monitoring dashboard must never
+    # conflate.
+    INSUFFICIENT_DATA = "INSUFFICIENT_DATA"

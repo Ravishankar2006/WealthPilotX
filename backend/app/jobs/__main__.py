@@ -10,6 +10,7 @@ Commands:
     predict           FR-08. Write a prediction row per tracked asset.
     promote           §10.5. Promote a model, refusing a regression.
     models            List registered models and their promotion metric.
+    monitor           §10.5. Feature-drift and prediction-error checks.
     backtest          §19. Backtest the latest portfolio against a benchmark.
     eval-recommendations  §18. Precision@K / Recall@K / NDCG for the ranker.
 
@@ -130,6 +131,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     models = commands.add_parser("models", help="List registered models.")
     models.add_argument("--name", help="Limit to one model name.")
+
+    commands.add_parser(
+        "monitor", help="§10.5 drift checks against the production prediction model."
+    )
 
     rank_eval = commands.add_parser(
         "eval-recommendations", help="§18 ranking metrics for the recommendation engine."
@@ -286,6 +291,13 @@ def _dispatch(args: argparse.Namespace, db: Session, settings: Settings) -> int:
 
     if args.command == "models":
         ml.list_models(db, args.name)
+        return EXIT_OK
+
+    if args.command == "monitor":
+        # Always EXIT_OK. A drift alert is a finding, not a job failure, and a
+        # non-zero exit would make a scheduler treat it as one — retrying the check
+        # and, in a CI context, failing a build over data the code did not change.
+        ml.monitor(db)
         return EXIT_OK
 
     if args.command == "eval-recommendations":

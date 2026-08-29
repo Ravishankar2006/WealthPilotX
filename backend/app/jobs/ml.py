@@ -18,12 +18,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.logging import get_logger, safe_extra
-from app.ml import backtest, registry
+from app.ml import backtest, monitoring, registry
 from app.ml.features.market import load_prices
 from app.ml.prediction import dataset as prediction_dataset
 from app.ml.prediction import model as prediction_model
 from app.ml.risk import model as risk_model
 from app.models.asset import Asset
+from app.models.enums import DriftVerdict
+from app.models.model_monitoring import ModelMonitoring
 from app.models.model_record import PREDICTION_MODEL, RISK_MODEL, ModelRecord
 from app.models.prediction import Prediction
 from app.services import prediction_service
@@ -337,3 +339,32 @@ def evaluate_recommendations(db: Session, k: int = 10) -> dict[str, object] | No
         "See Docs/MODELS/portfolio-optimizer.md."
     )
     return results
+
+
+def monitor(db: Session) -> list[ModelMonitoring]:
+    """§10.5's drift check. Prints a table; the alerts are in the log stream."""
+    observations = monitoring.run(db)
+
+    if not observations:
+        print("monitor: no production prediction model — nothing to monitor")  # noqa: T201
+        return observations
+
+    ordering = {
+        DriftVerdict.ALERT: 0,
+        DriftVerdict.WATCH: 1,
+        DriftVerdict.INSUFFICIENT_DATA: 2,
+        DriftVerdict.STABLE: 3,
+    }
+    # Worst first. An operator reading a scheduler's output sees the line that
+    # needs them before the thirty that do not.
+    for row in sorted(observations, key=lambda r: ordering[r.verdict]):
+        value = f"{row.value:.4f}" if row.value is not None else "—"
+        print(f"{str(row.verdict):18} {row.subject:26} {value}")  # noqa: T201
+
+    alerts = [r for r in observations if r.verdict is DriftVerdict.ALERT]
+    if alerts:
+        print(  # noqa: T201
+            f"\nmonitor: {len(alerts)} alert(s). §10.5 leaves the response to a human — "
+            "review before retraining or promoting anything."
+        )
+    return observations

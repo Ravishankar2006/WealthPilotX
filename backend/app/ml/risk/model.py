@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.inspection import permutation_importance
 from sklearn.model_selection import train_test_split
 
 from app.ml import evaluation
@@ -44,6 +45,25 @@ FOREST_PARAMS: dict[str, Any] = {
     "random_state": RANDOM_SEED,
     "n_jobs": -1,
 }
+
+
+# Which model features stand in for which rubric factor, for the M6 alignment check
+# below. `income`, `savings` and their ratio all serve the rubric's single
+# savings-ratio factor, so they are compared as one group — the forest is free to
+# split the work between them, and counting them separately would understate the
+# family every time it did.
+RUBRIC_FEATURE_GROUPS: dict[str, tuple[str, ...]] = {
+    "appetite": ("risk_appetite",),
+    "horizon": ("investment_horizon",),
+    "age": ("age",),
+    "savings_ratio": ("income", "savings", "savings_to_income"),
+    "experience": ("experience",),
+    "literacy": ("financial_literacy",),
+}
+
+# Repeats for the permutation importance. Five is enough to stabilise the ranking
+# on a few thousand rows without making `train-risk` noticeably slower.
+PERMUTATION_REPEATS = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,7 +129,89 @@ def train(
         feature_columns=tuple(data.features.columns),
         feature_importances=importances,
     )
+
+    # Computed at training time rather than on demand so it travels in the registry
+    # row with the metrics it belongs beside. A validation result that has to be
+    # re-run to be read is one nobody reads.
+    metrics["rubric_alignment"] = rubric_alignment(artifact, x_test, y_test)
+
     return artifact, metrics
+
+
+def rubric_alignment(
+    artifact: "RiskArtifact",
+    x_test: pd.DataFrame,
+    y_test: pd.Series,
+    *,
+    seed: int = RANDOM_SEED,
+) -> dict[str, Any]:
+    """Does the forest rely on the factors the rubric says matter? (M6, §10.5.)
+
+    This is model *validation*, not user-facing explanation. The rubric is a rule
+    this repo wrote, so its per-factor contributions are already exact and are what
+    FR-03 serves. The open question is whether the forest fitted to those labels
+    learned the rule or learned a shortcut through it — a forest that reproduces the
+    labels while keying almost entirely on `age` would score well on F1 and be wrong
+    for reasons nobody had looked at.
+
+    Permutation importance rather than the stored impurity importances: impurity
+    importance is biased toward high-cardinality continuous features, and half the
+    inputs here are three-level ordinals, so the comparison would be rigged against
+    exactly the factors carrying the most weight.
+
+    **The shares are not expected to equal the weights, and a mismatch is not
+    automatically a fault.** Permutation importance measures how much the *fitted
+    model* degrades when a column is shuffled, which depends on that column's spread
+    in the population as well as its coefficient. A heavily weighted factor with
+    little variation across users can matter enormously to the rule and barely at
+    all to the model's error. So this reports the ordering agreement and both
+    tables, and leaves the judgement to a reader of the model card.
+    """
+    result = permutation_importance(
+        artifact.classifier,
+        x_test,
+        y_test,
+        n_repeats=PERMUTATION_REPEATS,
+        random_state=seed,
+        n_jobs=-1,
+    )
+
+    per_feature = {
+        column: float(value)
+        for column, value in zip(x_test.columns, result.importances_mean, strict=True)
+    }
+
+    grouped = {
+        factor: sum(max(per_feature.get(column, 0.0), 0.0) for column in columns)
+        for factor, columns in RUBRIC_FEATURE_GROUPS.items()
+    }
+    total = sum(grouped.values())
+    # A total of zero means shuffling every column changed nothing, which would mean
+    # the forest ignores its inputs entirely. Guarding rather than dividing by zero,
+    # because that state should surface as null shares in the model card, not as a
+    # traceback halfway through training.
+    shares = (
+        {factor: round(value / total, 4) for factor, value in grouped.items()}
+        if total > 0
+        else dict.fromkeys(grouped, 0.0)
+    )
+
+    declared = rubric.declared_weights()
+    by_share = sorted(shares, key=lambda k: shares[k], reverse=True)
+    by_weight = sorted(declared, key=lambda k: declared[k], reverse=True)
+
+    return {
+        "method": f"permutation_importance, {PERMUTATION_REPEATS} repeats, held-out test set",
+        "permutation_importance": {k: round(v, 6) for k, v in per_feature.items()},
+        "importance_share": shares,
+        "declared_weight": declared,
+        "ranking_by_share": by_share,
+        "ranking_by_weight": by_weight,
+        # Set comparison, not sequence: the rubric's 0.10 pair are tied by design, so
+        # their relative order carries no information to agree or disagree with.
+        "top3_agree": set(by_share[:3]) == set(by_weight[:3]),
+        "largest_share_divergence": round(max(abs(shares[k] - declared[k]) for k in declared), 4),
+    }
 
 
 def _top_factors(parts: rubric.RubricComponents) -> list[dict[str, Any]]:

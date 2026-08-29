@@ -106,6 +106,56 @@ stale.
 
 ---
 
+## Rubric alignment (added M6)
+
+The F1 score answers "does the forest reproduce the rubric's labels?" It does not answer "does it
+reproduce them *for the rubric's reasons?*" A forest that keyed almost entirely on age while
+scoring well on F1 would be right by accident, and nobody would have looked.
+
+So every training run now measures **permutation importance** on the held-out test set and records
+it on the `models` row as `rubric_alignment`. Permutation importance rather than the stored impurity
+importances: impurity importance is biased toward high-cardinality continuous features, and half of
+these inputs are three-level ordinals — the comparison would be rigged against exactly the factors
+carrying the most weight.
+
+Features are grouped to match the rubric's factors. `income`, `savings` and `savings_to_income` all
+serve the rubric's single savings-ratio factor, and the forest is free to split the work between
+them, so counting them separately would understate that family every time it did.
+
+**Measured on a 3,000-profile run (2026-08-29):**
+
+| Factor | Declared weight | Importance share |
+|---|---|---|
+| Stated risk appetite | 0.30 | 0.44 |
+| Investment horizon | 0.20 | 0.21 |
+| Age | 0.15 | 0.14 |
+| Financial literacy | 0.10 | 0.08 |
+| Savings relative to income | 0.15 | **0.08** |
+| Investment experience | 0.10 | 0.06 |
+
+The top three agree with the rubric's top three, and horizon and age land almost exactly on their
+declared weights. Two divergences are worth stating rather than rounding away:
+
+- **The forest leans harder on stated appetite than the rubric does** (0.44 against 0.30).
+- **It leans much less on the savings ratio** (0.08 against 0.15), dropping it from joint-third by
+  weight to fifth by importance.
+
+**This is not automatically a fault, and the reason matters.** Permutation importance measures how
+much the fitted model degrades when a column is shuffled, which depends on that column's *spread
+across the population* as well as its coefficient. The savings-ratio component saturates at three
+times annual income and most sampled profiles sit well below that, so the component varies little
+between users — it can matter a great deal to the rule and still be nearly useless to a model
+trying to separate people. Appetite, a three-level input spread evenly across the population, is the
+opposite.
+
+The honest reading: the forest has learned the rubric's ordering, and where it deviates the
+deviation traces to the rubric's own saturation choice rather than to the model. A future revision
+that wants savings to carry its declared weight in practice should change the saturation point, not
+the model. This has not been done, because doing it would be tuning a rule about people's finances
+to make a metric look better, which is the trap §18 warns about.
+
+---
+
 ## Serving behaviour
 
 - **The category comes from the model; the score comes from the rubric.** The served score is the

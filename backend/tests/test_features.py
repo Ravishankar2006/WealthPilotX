@@ -207,3 +207,38 @@ class TestFeatureAssembly:
 
         january = frame.loc[frame.index < "2025-02-03", "inflation"].dropna()
         assert (january == 300.0).all(), "a value between releases was invented"
+
+
+class TestBenchmarkAbsence:
+    """§16.3 — a universe without SPY must degrade, not disappear.
+
+    `BENCHMARK_SYMBOL`'s docstring said an absent benchmark meant "correlation
+    features are simply omitted rather than the whole pipeline failing". It did not:
+    `benchmark_correlation_60` sat in `MARKET_FEATURE_COLUMNS`, which
+    `usable_feature_columns` never dropped, so an all-NaN correlation column took
+    every row with it when the warm-up rows were trimmed. The documented behaviour
+    and the actual behaviour had come apart; these tests pin the documented one.
+    """
+
+    def test_an_all_nan_correlation_column_is_dropped(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "sma_ratio_20": [0.01, 0.02],
+                "benchmark_correlation_60": [np.nan, np.nan],
+                "inflation": [3.1, 3.2],
+            }
+        )
+        columns = usable_feature_columns(frame)
+
+        assert "benchmark_correlation_60" not in columns
+        assert "sma_ratio_20" in columns
+
+    def test_a_populated_correlation_column_is_kept(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "sma_ratio_20": [0.01, 0.02],
+                "benchmark_correlation_60": [np.nan, 0.8],
+                "inflation": [3.1, 3.2],
+            }
+        )
+        assert "benchmark_correlation_60" in usable_feature_columns(frame)

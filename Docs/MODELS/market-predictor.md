@@ -103,6 +103,51 @@ Measured values live on the `models` row per version — `python -m app.jobs mod
 
 ---
 
+## Explainability (added M6)
+
+Every stored prediction can be decomposed with **TreeSHAP**, served at
+`GET /api/v1/market/{symbol}/prediction/explanation` and rendered on the Explainability page.
+
+Three properties are load-bearing:
+
+- **The contributions are exact, not sampled.** XGBoost implements TreeSHAP natively; the
+  `shap` package is not a dependency. `base_value + Σ contributions == predicted_return`, asserted
+  in `app/ml/explain.py` and in the test suite rather than assumed. If the identity ever fails the
+  API returns 503 instead of serving numbers that do not add up.
+- **The explanation uses the model version that made the prediction**, not whatever is in production
+  now. The features are rebuilt as of the stored prediction's own date, the artifact is loaded by
+  that version, and the recomputed value is checked against the stored one — a mismatch is reported
+  as `reproduced: false` rather than quietly presented as a decomposition of a different number.
+- **Only the point model is explained.** The q10/q90 pair produces the confidence figure, and "why
+  is the model unsure?" is a different question. Attributing an interval width to features would
+  invite reading it as a second prediction.
+
+## Drift monitoring (added M6)
+
+`python -m app.jobs monitor` runs nightly (01:00 UTC) and writes to `model_monitoring`:
+
+- **Population Stability Index** per fitted feature, the training window against the last 90 days,
+  binned on the *reference* distribution's deciles. Bands: < 0.10 stable, 0.10–0.25 watch, > 0.25
+  alert.
+- **Rolling RMSE** over predictions whose horizon has actually elapsed, against the RMSE recorded at
+  training. Bands: < 1.2× stable, 1.2–1.5× watch, > 1.5× alert. Predictions whose horizon has not
+  closed are excluded rather than part-scored — comparing a 20-day forecast against a 2-day move
+  would report the mismatch as model error.
+
+The bands were written into `Docs/PLAN/PHASE-6-HARDENING.md` §2.2 **before any measurement was
+taken**. A drift monitor whose thresholds are chosen after seeing the first run reports that
+everything is fine, permanently, by construction.
+
+An alert writes a row and logs at WARNING. It does not retrain, demote or unregister anything:
+§10.5 requires promotion to be reviewed manually in the MVP, and a monitor that acts on its own is
+that review removed.
+
+A check that cannot run records `INSUFFICIENT_DATA` with a reason, never `STABLE`. On a dashboard,
+"measured and fine" and "not measured" are indistinguishable unless the code refuses to conflate
+them — and on a model this close to noise, "not measured" is the common case early on.
+
+---
+
 ## Limitations
 
 - Public price and macro history only. No fundamentals, no news, no order flow, no alternative data.

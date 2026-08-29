@@ -16,10 +16,12 @@ import { ApiError } from "./types";
 import type {
   Asset,
   Explanation,
+  FairnessReport,
   MarketHistory,
   Paginated,
   Portfolio,
   Prediction,
+  PredictionExplanation,
   RiskAssessment,
 } from "./types";
 
@@ -48,6 +50,22 @@ export const market = {
   /** Null when the asset has no stored prediction — an ordinary state, not a failure. */
   prediction: (symbol: string) =>
     notFoundAsNull(api.get<Prediction>(`/market/${encodeURIComponent(symbol)}/prediction`)),
+
+  /**
+   * FR-13 advanced. Null on a 404 (no prediction to explain) for the same reason as
+   * above. A 503 is *not* swallowed: it means the model that made the prediction
+   * can no longer be loaded, which the page must say rather than render as empty.
+   */
+  explanation: (symbol: string) =>
+    notFoundAsNull(
+      api.get<PredictionExplanation>(
+        `/market/${encodeURIComponent(symbol)}/prediction/explanation`,
+      ),
+    ),
+};
+
+export const fairness = {
+  report: () => api.get<FairnessReport>("/fairness/report"),
 };
 
 export const risk = {

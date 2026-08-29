@@ -8,6 +8,8 @@ const NAV = [
   { to: "/portfolio", label: "Portfolio" },
   { to: "/market", label: "Markets" },
   { to: "/risk", label: "Risk" },
+  { to: "/explainability", label: "Explainability" },
+  { to: "/fairness", label: "Fairness" },
   { to: "/settings", label: "Data & privacy" },
 ];
 

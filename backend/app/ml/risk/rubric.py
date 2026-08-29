@@ -207,3 +207,20 @@ def weighted_contributions(parts: RubricComponents) -> dict[str, float]:
         "experience": WEIGHT_EXPERIENCE * parts.experience,
         "literacy": WEIGHT_LITERACY * parts.literacy,
     }
+
+
+def declared_weights() -> dict[str, float]:
+    """The rubric's weights, keyed the same way as `weighted_contributions`.
+
+    Exists so the M6 alignment check in `model.py` compares against the constants
+    themselves rather than against a second copy of the numbers written out in
+    another module — two lists of six weights drift the moment one is edited.
+    """
+    return {
+        "appetite": WEIGHT_APPETITE,
+        "horizon": WEIGHT_HORIZON,
+        "age": WEIGHT_AGE,
+        "savings_ratio": WEIGHT_SAVINGS_RATIO,
+        "experience": WEIGHT_EXPERIENCE,
+        "literacy": WEIGHT_LITERACY,
+    }

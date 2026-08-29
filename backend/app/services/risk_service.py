@@ -16,7 +16,7 @@ from app.ml.risk import model as risk_model
 from app.models.financial_profile import FinancialProfile
 from app.models.model_record import RISK_MODEL
 from app.models.risk_assessment import RiskAssessment
-from app.services import profile_service
+from app.services import metrics_service, profile_service
 
 logger = get_logger(__name__)
 
@@ -42,16 +42,20 @@ def assess(db: Session, user_id: uuid.UUID) -> RiskAssessment:
     loaded = registry.resolve_production(db, RISK_MODEL)
     artifact: risk_model.RiskArtifact = loaded.payload
 
-    result = risk_model.classify(
-        artifact,
-        age=profile.age,
-        income=profile.income,
-        savings=profile.savings,
-        risk_appetite=profile.risk_appetite,
-        investment_horizon=profile.investment_horizon,
-        experience=profile.experience,
-        financial_literacy=profile.financial_literacy,
-    )
+    # §16.4's "model prediction latency", and §16.1's 5-second budget is the number
+    # it is measured against. Timed around inference only, not the surrounding
+    # database work, so a slow query cannot be read as a slow model.
+    with metrics_service.timed("risk_classification"):
+        result = risk_model.classify(
+            artifact,
+            age=profile.age,
+            income=profile.income,
+            savings=profile.savings,
+            risk_appetite=profile.risk_appetite,
+            investment_horizon=profile.investment_horizon,
+            experience=profile.experience,
+            financial_literacy=profile.financial_literacy,
+        )
 
     assessment = RiskAssessment(
         user_id=user_id,

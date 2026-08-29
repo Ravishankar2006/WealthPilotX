@@ -193,3 +193,65 @@ export interface Explanation {
   created_at: string;
   disclaimer: string;
 }
+
+/** FR-13 (advanced) — one feature's Shapley contribution to a prediction. */
+export interface FeatureContribution {
+  feature: string;
+  label: string;
+  /** Null when the feature itself had no value that day; the attribution still holds. */
+  value: number | null;
+  contribution: number;
+  direction: "increases" | "decreases";
+}
+
+export interface PredictionExplanation {
+  symbol: string;
+  prediction_date: string;
+  horizon_days: number;
+  model_version: string;
+  predicted_return: number;
+  base_value: number;
+  contributions: FeatureContribution[];
+  /** The payload is truncated, so `base_value + shown` does not close. These say so. */
+  contributions_shown: number;
+  contributions_total: number;
+  reproduced: boolean;
+  disclaimer: string;
+}
+
+/** FR-14 — every metric is nullable, and null means suppressed, never zero. */
+export interface FairnessGroup {
+  group: string;
+  size: number;
+  suppressed: boolean;
+  risk_distribution: Record<string, number> | null;
+  mean_risk_score: number | null;
+  mean_equity_weight: number | null;
+  portfolio_rate: number | null;
+}
+
+export interface FairnessDisparity {
+  metric: string;
+  ratio: number;
+  lowest_group: string;
+  highest_group: string;
+  lowest_rate: number;
+  highest_rate: number;
+  flagged: boolean;
+}
+
+export interface FairnessDimension {
+  dimension: string;
+  label: string;
+  groups: FairnessGroup[];
+  disparity: FairnessDisparity | null;
+  note: string | null;
+}
+
+export interface FairnessReport {
+  population: number;
+  reportable_population: number;
+  min_group_size: number;
+  dimensions: FairnessDimension[];
+  disclaimer: string;
+}

@@ -122,7 +122,11 @@ jobs:
           python -m app.jobs predict
 
       - name: Tests
-        run: pytest -q
+        # §20's coverage pass. The floor is the measured value rounded down, and it
+        # is there to stop coverage falling — not to be chased upward. Tests written
+        # to cover a line rather than a behaviour make the suite slower and the
+        # number prettier.
+        run: pytest -q --cov=app --cov-report=term-missing:skip-covered --cov-fail-under=89
 
   frontend:
     name: Frontend — types and tests
@@ -148,7 +152,8 @@ jobs:
         run: npx tsc -b
 
       - name: Tests
-        run: npm test
+        # §20's coverage pass, frontend half. Thresholds live in vite.config.ts.
+        run: npm run test:coverage
 
   images:
     name: Docker images build
@@ -163,9 +168,11 @@ jobs:
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest
-    # §16.2 requires dependency scanning. Reporting only to begin with — a
-    # transitive advisory should not block an unrelated PR on day one.
-    continue-on-error: true
+    # §16.2 requires dependency scanning. Non-blocking from M2 so a transitive
+    # advisory could not fail an unrelated change on day one; blocking from M6, now
+    # that there is a triage process behind it. The threshold is high-and-above:
+    # anything serious fails the build, while moderate findings stay visible and are
+    # assessed by hand in Docs/SECURITY-REVIEW.md rather than silenced by a number.
     steps:
       - uses: actions/checkout@v4
 

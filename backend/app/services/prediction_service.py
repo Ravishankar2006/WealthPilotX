@@ -22,6 +22,7 @@ from app.models.asset import Asset
 from app.models.model_record import PREDICTION_MODEL
 from app.models.prediction import Prediction
 from app.schemas.risk import PredictionOut
+from app.services import metrics_service
 
 
 class NoPredictionError(Exception):
@@ -123,7 +124,8 @@ def generate_for_asset(
         return None
 
     features, feature_date = built
-    result = prediction_model.predict(artifact, features)
+    with metrics_service.timed("market_prediction"):
+        result = prediction_model.predict(artifact, features)
 
     return Prediction(
         asset_id=asset.id,

@@ -67,3 +67,47 @@ class PredictionOut(BaseModel):
 
     unavailable: list[str] = []
     disclaimer: str = MODEL_OUTPUT_DISCLAIMER
+
+
+class FeatureContributionOut(BaseModel):
+    """One feature's Shapley contribution to a prediction (FR-13, advanced).
+
+    `contribution` is in the units of the target — a 20-day log return — so the
+    numbers are directly comparable with `predicted_return` rather than being an
+    abstract importance score.
+    """
+
+    feature: str
+    label: str
+    value: float | None
+    contribution: float
+    direction: str
+
+
+class PredictionExplanationOut(BaseModel):
+    """FR-13's advanced explanation for a stored market prediction.
+
+    `base_value + sum(contributions) == predicted_return` over the *full* feature
+    set. `contributions` here is the truncated view, so the identity will not close
+    on this payload — `contributions_shown` and `contributions_total` say so
+    explicitly rather than leaving a reader to wonder why the arithmetic misses.
+    """
+
+    symbol: str
+    prediction_date: date_type
+    horizon_days: int
+    model_version: str
+
+    predicted_return: float
+    base_value: float
+    contributions: list[FeatureContributionOut]
+    contributions_shown: int
+    contributions_total: int
+
+    # False when the model version that made this prediction no longer reproduces
+    # it from the same inputs. The explanation is still served — it is a genuine
+    # decomposition of what the model does now — but a reader deserves to know the
+    # number moved. See `services/explanation_service.py`.
+    reproduced: bool = True
+
+    disclaimer: str = MODEL_OUTPUT_DISCLAIMER

@@ -52,11 +52,15 @@ MARKET_FEATURE_COLUMNS: tuple[str, ...] = (
     "volume_ratio_20",
 )
 
+# The one market feature that depends on a *second* asset's history rather than this
+# asset's own. It gets macro-like treatment in `usable_feature_columns` for that
+# reason: every other market feature is computable whenever the asset has prices, so
+# an all-NaN one means the price history is too short — a per-asset exclusion. An
+# all-NaN correlation means SPY is missing, which is a property of the universe, and
+# excluding every asset over it would leave nothing to train on.
+CROSS_ASSET_FEATURE_COLUMNS: tuple[str, ...] = ("benchmark_correlation_60",)
+
 # Macro features depend on FR-05 ingestion having run and on FRED being reachable.
-# Treating them as mandatory made the entire feature matrix empty whenever
-# `economic_indicators` was — which meant training silently produced nothing on any
-# deployment where the economic job had not run yet. Market prediction must not be
-# impossible because a second, independent data source is missing.
 MACRO_FEATURE_COLUMNS: tuple[str, ...] = (
     "inflation",
     "interest_rate",
@@ -79,14 +83,20 @@ def usable_feature_columns(frame: pd.DataFrame) -> tuple[str, ...]:
 
     Market features are never dropped — a market feature that is entirely NaN means
     the price history is too short, which is a per-asset exclusion, not a per-column
-    one.
+    one. The single exception is `benchmark_correlation_60`; see
+    `CROSS_ASSET_FEATURE_COLUMNS` for why it behaves like a macro column.
     """
-    macro = tuple(
+
+    def present(column: str) -> bool:
+        return column in frame.columns and bool(frame[column].notna().any())
+
+    market = tuple(
         column
-        for column in MACRO_FEATURE_COLUMNS
-        if column in frame.columns and frame[column].notna().any()
+        for column in MARKET_FEATURE_COLUMNS
+        if column not in CROSS_ASSET_FEATURE_COLUMNS or present(column)
     )
-    return MARKET_FEATURE_COLUMNS + macro
+    macro = tuple(column for column in MACRO_FEATURE_COLUMNS if present(column))
+    return market + macro
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,7 +256,10 @@ def build_training_matrix(
     # NaN macro column on older rows costs a little signal there and nothing
     # elsewhere. Imputing a value would be the harmful option — it would state a
     # CPI figure for a date before one existed.
-    required = [*MARKET_FEATURE_COLUMNS, TARGET_COLUMN]
+    # Filtered through `columns`, not the declared list: a market feature dropped as
+    # unusable above must not then be required here, or dropping it achieves nothing
+    # and the matrix empties anyway.
+    required = [c for c in MARKET_FEATURE_COLUMNS if c in columns] + [TARGET_COLUMN]
     kept = [*columns, TARGET_COLUMN]
     return FeatureMatrix(frame.dropna(subset=required)[kept], symbol, columns)
 

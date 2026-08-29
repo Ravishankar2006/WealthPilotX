@@ -6,6 +6,8 @@ from app.models.economic_indicator import EconomicIndicator
 from app.models.enums import (
     AssetClass,
     AssetType,
+    DriftCheck,
+    DriftVerdict,
     EconomicSeries,
     FinancialLiteracy,
     IngestionStatus,
@@ -19,6 +21,7 @@ from app.models.enums import (
 from app.models.financial_profile import FinancialProfile
 from app.models.ingestion_run import IngestionRun
 from app.models.market_data import MarketData
+from app.models.model_monitoring import ModelMonitoring
 from app.models.model_record import ModelRecord
 from app.models.portfolio import Portfolio, PortfolioAsset
 from app.models.prediction import Prediction
@@ -32,6 +35,8 @@ __all__ = [
     "AssetClass",
     "AssetType",
     "Base",
+    "DriftCheck",
+    "DriftVerdict",
     "EconomicIndicator",
     "EconomicSeries",
     "FinancialLiteracy",
@@ -41,6 +46,7 @@ __all__ = [
     "InvestmentExperience",
     "InvestmentGoal",
     "MarketData",
+    "ModelMonitoring",
     "ModelRecord",
     "ModelStatus",
     "Portfolio",
